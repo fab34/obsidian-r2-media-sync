@@ -4,6 +4,27 @@ R2 Media Sync is an Obsidian desktop plugin that automatically uploads local med
 
 It is designed for workflows where other tools create local image files inside your vault, such as PDF-to-Markdown converters, document importers, AI assistants, or batch import tools.
 
+## How It Differs From Other Image Upload Plugins
+
+R2 Media Sync is not primarily a paste-image uploader.
+
+Many Obsidian image upload plugins focus on the moment you paste, drag, or manually select an image. That workflow is already handled well by plugins such as EzImage.
+
+R2 Media Sync focuses on the next problem: other tools may create image files directly inside your vault and insert local image links into Markdown. Common examples include:
+
+- PDF-to-Markdown converters that extract page images into the note folder.
+- Document importers that generate local assets.
+- AI assistants or automation tools that write Markdown and image files directly.
+- Batch migration workflows that leave notes full of local image references.
+
+In those cases, paste/drag upload hooks never run. R2 Media Sync watches the resulting Markdown files, uploads the referenced local images to Cloudflare R2, rewrites the links in-place, and can remove the local image files after a successful upload.
+
+In short:
+
+- Use EzImage or a similar plugin for pasted/dragged images.
+- Use R2 Media Sync for generated or imported local images that already exist in your vault.
+- Use both together if you want pasted images and generated images to follow the same R2 storage strategy.
+
 ## What It Does
 
 - Watches newly created or modified Markdown files.
