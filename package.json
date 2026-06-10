@@ -1,0 +1,26 @@
+{
+  "name": "obsidian-r2-media-sync",
+  "version": "0.1.0",
+  "description": "Automatically upload local Obsidian media assets to Cloudflare R2 and rewrite Markdown links.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production"
+  },
+  "keywords": [
+    "obsidian",
+    "obsidian-plugin",
+    "cloudflare-r2",
+    "markdown",
+    "media"
+  ],
+  "author": "fab34",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "builtin-modules": "^3.3.0",
+    "esbuild": "^0.20.2",
+    "obsidian": "^1.5.12",
+    "typescript": "^5.4.3"
+  }
+}
