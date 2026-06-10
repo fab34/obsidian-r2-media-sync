@@ -172,8 +172,8 @@ export default class R2MediaSyncPlugin extends Plugin {
       id: "scan-configured-scope",
       name: "Scan configured scope now",
       callback: async () => {
-        const count = await this.scanConfiguredScope(true);
-        new Notice(`R2 Media Sync: scanned ${count} Markdown file(s).`);
+        const result = await this.scanConfiguredScope(true);
+        new Notice(`R2 Media Sync: scanned ${result.scanned} Markdown file(s), uploaded ${result.uploaded} image(s).`);
       },
     });
 
@@ -241,12 +241,17 @@ export default class R2MediaSyncPlugin extends Plugin {
     this.queue.set(path, timeoutId);
   }
 
-  async scanConfiguredScope(manual: boolean): Promise<number> {
+  async scanConfiguredScope(manual: boolean): Promise<{ scanned: number; uploaded: number }> {
     const markdownFiles = this.app.vault.getMarkdownFiles().filter((file) => this.isPathInScope(file.path));
+    let uploaded = 0;
     for (const file of markdownFiles) {
-      await this.processFile(file, manual);
+      uploaded += await this.processFile(file, false);
     }
-    return markdownFiles.length;
+    this.lastStatus = `Scanned ${markdownFiles.length} Markdown file(s), uploaded ${uploaded} image(s).`;
+    if (manual && uploaded === 0) {
+      this.lastStatus += " No local images found.";
+    }
+    return { scanned: markdownFiles.length, uploaded };
   }
 
   private isPathInScope(path: string): boolean {
@@ -339,9 +344,9 @@ export default class R2MediaSyncPlugin extends Plugin {
     return null;
   }
 
-  async processFile(markdownFile: TFile, manual: boolean): Promise<void> {
-    if (markdownFile.extension !== "md" || this.processing.has(markdownFile.path)) return;
-    if (!this.isPathInScope(markdownFile.path)) return;
+  async processFile(markdownFile: TFile, manual: boolean): Promise<number> {
+    if (markdownFile.extension !== "md" || this.processing.has(markdownFile.path)) return 0;
+    if (!this.isPathInScope(markdownFile.path)) return 0;
 
     this.processing.add(markdownFile.path);
     try {
@@ -381,7 +386,7 @@ export default class R2MediaSyncPlugin extends Plugin {
 
       if (!replacements.length) {
         if (manual) new Notice("R2 Media Sync: no local images found.");
-        return;
+        return 0;
       }
 
       let rewritten = original;
@@ -402,8 +407,10 @@ export default class R2MediaSyncPlugin extends Plugin {
 
       this.lastStatus = `Uploaded ${uploaded.size} image(s) for ${markdownFile.path}`;
       new Notice(`R2 Media Sync: uploaded ${uploaded.size} image(s).`);
+      return uploaded.size;
     } catch (error) {
       this.reportError("R2 Media Sync failed", error, manual);
+      return 0;
     } finally {
       this.processing.delete(markdownFile.path);
     }
@@ -635,8 +642,8 @@ class R2MediaSyncSettingTab extends PluginSettingTab {
         .setButtonText("Scan")
         .setCta()
         .onClick(async () => {
-          const count = await this.plugin.scanConfiguredScope(true);
-          new Notice(`R2 Media Sync: scanned ${count} Markdown file(s).`);
+          const result = await this.plugin.scanConfiguredScope(true);
+          new Notice(`R2 Media Sync: scanned ${result.scanned} Markdown file(s), uploaded ${result.uploaded} image(s).`);
           this.display();
         }));
 
