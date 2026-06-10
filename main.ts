@@ -40,10 +40,10 @@ const DEFAULT_SETTINGS: R2MediaSyncSettings = {
   bucketName: "",
   publicUrl: "",
   pathTemplate: "{yyyy}/{MM}/{timestamp}-{random}.{ext}",
-  deleteLocalAfterUpload: true,
+  deleteLocalAfterUpload: false,
   processMarkdownImages: true,
   processWikiImages: true,
-  processOnStartup: true,
+  processOnStartup: false,
   scanScopeMode: "vault",
   includeFolders: ["AI 工作區"],
   excludeFolders: [".obsidian", ".git", ".trash", "Templates"],
@@ -549,7 +549,7 @@ class R2MediaSyncSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Delete local image after upload")
-      .setDesc("Recommended for keeping iCloud vaults small. Disable this if you want local copies.")
+      .setDesc("Off by default. Enable only if you are comfortable removing local files after successful upload.")
       .addToggle((toggle) => toggle
         .setValue(this.plugin.settings.deleteLocalAfterUpload)
         .onChange(async (value) => {
@@ -579,7 +579,7 @@ class R2MediaSyncSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Scan on startup")
-      .setDesc("Scan the configured scope when Obsidian starts.")
+      .setDesc("Off by default. Enable after testing your R2 settings and scan scope.")
       .addToggle((toggle) => toggle
         .setValue(this.plugin.settings.processOnStartup)
         .onChange(async (value) => {

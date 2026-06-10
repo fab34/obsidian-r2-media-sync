@@ -59,6 +59,16 @@ Those files can clutter the vault and consume sync storage. R2 Media Sync cleans
 - Manual command to scan the configured scope.
 - Manual command to import EzImage settings.
 
+## Safety Defaults
+
+R2 Media Sync uses conservative defaults for first-time installs:
+
+- It does not scan on startup by default.
+- It does not delete local images by default.
+- You can run a manual scan on the current note before enabling broader automation.
+
+After confirming your R2 settings, public URL, and scan scope, you can opt in to startup scans or local deletion from the plugin settings.
+
 ## Privacy and Security
 
 - No telemetry.
@@ -163,6 +173,15 @@ Recommended exclusions:
 .obsidian, .git, .trash, Templates
 ```
 
+### Recommended First Run
+
+1. Keep `Delete local image after upload` disabled.
+2. Keep `Scan on startup` disabled.
+3. Open a note with one or two local test images.
+4. Run `R2 Media Sync: Upload local images in current note`.
+5. Confirm the note was rewritten to public R2 URLs.
+6. Enable local deletion or startup scans only after the manual test behaves as expected.
+
 ## Commands
 
 Open the command palette and search for `R2 Media Sync`.
@@ -221,7 +240,7 @@ This repository is structured for eventual submission to the Obsidian community 
 
 Before submitting:
 
-- Publish a GitHub release whose tag exactly matches the version in `manifest.json`, for example `0.1.1`.
+- Publish a GitHub release whose tag exactly matches the version in `manifest.json`, for example `0.1.2`.
 - Attach `manifest.json`, `main.js`, and `styles.css` to that release.
 - Open a pull request to `obsidianmd/obsidian-releases`.
 

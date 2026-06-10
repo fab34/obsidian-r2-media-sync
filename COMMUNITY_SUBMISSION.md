@@ -15,7 +15,7 @@ This file tracks the steps needed to submit R2 Media Sync to the Obsidian commun
   - `main.js`
   - `styles.css`
 - [x] No hard-coded private R2 credentials, tokens, public bucket URL, or local vault path.
-- [x] GitHub release published with tag matching `manifest.json` version exactly.
+- [ ] GitHub release published with tag matching `manifest.json` version exactly.
 - [ ] Pull request submitted to `obsidianmd/obsidian-releases`.
 
 ## Suggested `community-plugins.json` Entry
@@ -34,7 +34,7 @@ When opening a pull request to `obsidianmd/obsidian-releases`, add:
 
 ## Release Rule
 
-For Obsidian plugin releases, the GitHub release tag should match the version in `manifest.json`, such as `0.1.1`, without a leading `v`. Attach these built files to the release:
+For Obsidian plugin releases, the GitHub release tag should match the version in `manifest.json`, such as `0.1.2`, without a leading `v`. Attach these built files to the release:
 
 - `manifest.json`
 - `main.js`
