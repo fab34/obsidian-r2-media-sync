@@ -1,5 +1,5 @@
 {
-  "id": "r2-media-sync",
+  "id": "cloudflare-media-sync",
   "name": "R2 Media Sync",
   "version": "0.1.2",
   "minAppVersion": "1.5.0",
