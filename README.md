@@ -230,3 +230,7 @@ See `COMMUNITY_SUBMISSION.md` for the suggested entry and checklist.
 ## Notes
 
 This plugin intentionally only processes image files that are referenced by Markdown notes. It does not upload unreferenced orphan images, because doing so could remove files that are still being staged or reviewed.
+
+## License
+
+[MIT](https://github.com/fab34/obsidian-r2-media-sync/blob/main/LICENSE) — 歡迎自由使用、修改、散布。Issue 與 PR 都歡迎。
