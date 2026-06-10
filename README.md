@@ -58,6 +58,22 @@ Those files can clutter the vault and consume sync storage. R2 Media Sync cleans
 
 This plugin is not yet published to the Obsidian community plugin registry.
 
+### BRAT Installation
+
+If you use the BRAT plugin:
+
+1. Install and enable BRAT.
+2. Run `BRAT: Add a beta plugin for testing`.
+3. Enter:
+
+```text
+fab34/obsidian-r2-media-sync
+```
+
+4. Enable `R2 Media Sync` in Community plugins.
+
+### Manual Installation
+
 Manual installation:
 
 1. Download or build the plugin files:
@@ -177,6 +193,18 @@ For a manual release, include:
 - `manifest.json`
 - `main.js`
 - `styles.css`
+
+## Community Plugin Submission
+
+This repository is structured for eventual submission to the Obsidian community plugin directory.
+
+Before submitting:
+
+- Publish a GitHub release whose tag exactly matches the version in `manifest.json`, for example `0.1.1`.
+- Attach `manifest.json`, `main.js`, and `styles.css` to that release.
+- Open a pull request to `obsidianmd/obsidian-releases`.
+
+See `COMMUNITY_SUBMISSION.md` for the suggested entry and checklist.
 
 ## Notes
 
