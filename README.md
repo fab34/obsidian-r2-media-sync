@@ -48,13 +48,21 @@ Those files can clutter the vault and consume sync storage. R2 Media Sync cleans
 
 ## Features
 
-- Configurable local deletion after upload.
+- Configurable local cleanup after upload:
+  - move to Obsidian trash
+  - move to a review folder before manual cleanup
 - Configurable scan scope:
   - whole vault
   - selected folders only
 - Configurable excluded folders, such as `.obsidian`, `.git`, `Templates`, or attachment folders.
 - Toggle support for Markdown image links and wiki image embeds separately.
 - Use existing EzImage R2 settings or enter R2 credentials directly.
+- Reuse previous uploads by file hash to avoid uploading identical image content again.
+- Retry failed uploads before recording them as failed.
+- Keep a local failed upload log for troubleshooting.
+- View recent failed upload details in a modal.
+- Show the latest sync state in the Obsidian status bar.
+- Choose the plugin interface language: Auto, English, or Traditional Chinese.
 - Manual command to scan the current note.
 - Manual command to scan the configured scope.
 - Manual command to import EzImage settings.
@@ -66,6 +74,8 @@ R2 Media Sync uses conservative defaults for first-time installs:
 - It does not scan on startup by default.
 - It does not delete local images by default.
 - You can run a manual scan on the current note before enabling broader automation.
+- If local cleanup is enabled, files can be moved through Obsidian's trash handling or moved to a review folder after upload and link rewrite.
+- Failed uploads are recorded locally so you can inspect and retry later instead of losing track of partial failures.
 
 After confirming your R2 settings, public URL, and scan scope, you can opt in to startup scans or local deletion from the plugin settings.
 
@@ -77,6 +87,19 @@ After confirming your R2 settings, public URL, and scan scope, you can opt in to
 - Credentials are stored locally in Obsidian plugin data when using manual mode.
 - When using EzImage mode, this plugin reads the EzImage `data.json` file from your vault config folder locally and does not modify it.
 - Public Markdown links will contain your configured public R2 URL.
+- Upload history and failed upload logs are stored locally in this plugin's data folder.
+
+## Vault Access
+
+R2 Media Sync scans Markdown files so it can find local media references that were created by PDF converters, importers, AI tools, or other automation.
+
+You can limit this behavior by:
+
+- Choosing `Only included folders` instead of `Whole vault`.
+- Setting included folders such as `AI 工作區` or a specific project folder.
+- Excluding folders such as `.obsidian`, `.git`, `.trash`, `Templates`, or attachment folders.
+
+The plugin only uploads image files that are referenced by Markdown notes and are inside the configured scan scope.
 
 ## Requirements
 
@@ -126,6 +149,14 @@ Manual installation:
 
 Open `Settings -> R2 Media Sync`.
 
+### Language
+
+Choose one:
+
+- `Auto`: follow your system/browser language when it is Traditional Chinese, otherwise English.
+- `English`
+- `Traditional Chinese`
+
 ### R2 Settings Source
 
 Choose one:
@@ -141,6 +172,22 @@ Manual fields:
 - Bucket name
 - Public URL
 - Path template
+
+### Reliability
+
+- `Reuse uploads by file hash`: avoids uploading identical image content more than once by storing a local hash-to-URL history.
+- `Upload retry attempts`: retries each R2 upload before the image is recorded in the failed upload log.
+
+### Local Cleanup
+
+Local cleanup is disabled by default.
+
+When enabled, choose one cleanup mode:
+
+- `Move to Obsidian trash`: uses Obsidian's file trash handling.
+- `Move to review folder`: moves uploaded local files into a vault folder such as `_synced_media_trash`, preserving the original path under that folder so you can inspect before deleting.
+
+Use `Clear local review folder` from the command palette when you are ready to move review-folder files to Obsidian trash.
 
 ### Path Template
 
@@ -180,7 +227,7 @@ Recommended exclusions:
 3. Open a note with one or two local test images.
 4. Run `R2 Media Sync: Upload local images in current note`.
 5. Confirm the note was rewritten to public R2 URLs.
-6. Enable local deletion or startup scans only after the manual test behaves as expected.
+6. Enable local cleanup or startup scans only after the manual test behaves as expected.
 
 ## Commands
 
@@ -189,6 +236,9 @@ Open the command palette and search for `R2 Media Sync`.
 - `Upload local images in current note`
 - `Scan configured scope now`
 - `Import settings from EzImage`
+- `Show failed upload summary`
+- `Clear failed upload log`
+- `Clear local review folder`
 
 ## Example
 
