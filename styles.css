@@ -4,3 +4,24 @@
   margin-top: 8px;
   white-space: pre-wrap;
 }
+
+.r2-media-sync-failed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.r2-media-sync-failed-item {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  font-size: var(--font-ui-small);
+  padding: 8px;
+}
+
+.r2-media-sync-modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}

@@ -1,5 +1,6 @@
 import {
   App,
+  Modal,
   Notice,
   Plugin,
   PluginSettingTab,
@@ -134,6 +135,22 @@ const TEXT = {
     cmdImportEzImage: "Import settings from EzImage",
     cmdShowFailed: "Show failed upload summary",
     cmdClearFailed: "Clear failed upload log",
+    cmdClearReviewFolder: "Clear local review folder",
+    failedModalTitle: "Failed uploads",
+    failedModalEmpty: "No failed uploads recorded.",
+    failedModalIntro: "Recent failed uploads are listed below. Re-scan the note after fixing the underlying issue.",
+    failedModalTime: "Time",
+    failedModalNote: "Note",
+    failedModalImage: "Image",
+    failedModalAttempts: "Attempts",
+    failedModalMessage: "Message",
+    closeButton: "Close",
+    clearReviewTitle: "Clear local review folder",
+    clearReviewEmpty: "No files found in the local review folder.",
+    clearReviewConfirm: "Move {count} file(s) from {folder} to Obsidian trash?",
+    clearReviewButton: "Clear",
+    clearReviewDone: "Moved {count} review file(s) to trash.",
+    cancelButton: "Cancel",
     languageName: "Language",
     languageDesc: "Choose the plugin interface language.",
     languageAuto: "Auto",
@@ -219,6 +236,22 @@ const TEXT = {
     cmdImportEzImage: "從 EzImage 匯入設定",
     cmdShowFailed: "顯示失敗上傳摘要",
     cmdClearFailed: "清除失敗上傳紀錄",
+    cmdClearReviewFolder: "清理本機檢查資料夾",
+    failedModalTitle: "失敗上傳",
+    failedModalEmpty: "目前沒有失敗上傳紀錄。",
+    failedModalIntro: "以下列出最近的失敗上傳。修正原因後，可重新掃描來源筆記。",
+    failedModalTime: "時間",
+    failedModalNote: "筆記",
+    failedModalImage: "圖片",
+    failedModalAttempts: "嘗試次數",
+    failedModalMessage: "訊息",
+    closeButton: "關閉",
+    clearReviewTitle: "清理本機檢查資料夾",
+    clearReviewEmpty: "本機檢查資料夾沒有檔案。",
+    clearReviewConfirm: "要將 {folder} 中的 {count} 個檔案移到 Obsidian 垃圾桶嗎？",
+    clearReviewButton: "清理",
+    clearReviewDone: "已將 {count} 個檢查檔案移到垃圾桶。",
+    cancelButton: "取消",
     languageName: "語言",
     languageDesc: "選擇插件介面語言。",
     languageAuto: "自動",
@@ -547,12 +580,7 @@ export default class R2MediaSyncPlugin extends Plugin {
       name: this.t("cmdShowFailed"),
       callback: async () => {
         const failed = await this.readFailedUploads();
-        if (!failed.length) {
-          new Notice(`R2 Media Sync: ${this.t("noFailedUploads")}`);
-          return;
-        }
-        const latest = failed[failed.length - 1];
-        new Notice(`R2 Media Sync: ${this.t("failedUploadSummary", { count: failed.length, path: latest.imagePath })}`);
+        new FailedUploadsModal(this.app, this, failed).open();
       },
     });
 
@@ -563,6 +591,33 @@ export default class R2MediaSyncPlugin extends Plugin {
         await this.writeJsonFile(FAILED_UPLOAD_LOG, []);
         this.updateStatus(this.t("failedUploadLogCleared"));
         new Notice(`R2 Media Sync: ${this.t("failedUploadLogCleared")}`);
+      },
+    });
+
+    this.addCommand({
+      id: "clear-local-review-folder",
+      name: this.t("cmdClearReviewFolder"),
+      callback: async () => {
+        const files = this.getReviewFolderFiles();
+        if (!files.length) {
+          new Notice(`R2 Media Sync: ${this.t("clearReviewEmpty")}`);
+          return;
+        }
+
+        new ConfirmModal(
+          this.app,
+          this,
+          this.t("clearReviewTitle"),
+          this.t("clearReviewConfirm", {
+            count: files.length,
+            folder: normalizePath(this.settings.localCleanupFolder || DEFAULT_SETTINGS.localCleanupFolder),
+          }),
+          this.t("clearReviewButton"),
+          async () => {
+            const count = await this.clearReviewFolder(files);
+            new Notice(`R2 Media Sync: ${this.t("clearReviewDone", { count })}`);
+          },
+        ).open();
       },
     });
 
@@ -872,6 +927,25 @@ export default class R2MediaSyncPlugin extends Plugin {
     }
   }
 
+  private getReviewFolderFiles(): TFile[] {
+    const root = normalizePath(this.settings.localCleanupFolder || DEFAULT_SETTINGS.localCleanupFolder).replace(/^\/+|\/+$/g, "");
+    if (!root) return [];
+    return this.app.vault.getFiles().filter((file) => file.path === root || file.path.startsWith(`${root}/`));
+  }
+
+  private async clearReviewFolder(files: TFile[]): Promise<number> {
+    let count = 0;
+    for (const file of files) {
+      const current = this.app.vault.getAbstractFileByPath(file.path);
+      if (current instanceof TFile) {
+        await this.app.fileManager.trashFile(current);
+        count += 1;
+      }
+    }
+    this.updateStatus(this.t("clearReviewDone", { count }));
+    return count;
+  }
+
   private async uploadImage(file: TFile, settings: R2MediaSyncSettings, markdownPath: string): Promise<string> {
     const data = await this.app.vault.readBinary(file);
     const hash = sha256Hex(Buffer.from(data));
@@ -1035,6 +1109,89 @@ export default class R2MediaSyncPlugin extends Plugin {
     this.updateStatus(`${prefix}: ${message}`);
     console.error(prefix, error);
     if (showNotice) new Notice(`${prefix}: ${message}`);
+  }
+}
+
+class FailedUploadsModal extends Modal {
+  constructor(
+    app: App,
+    private plugin: R2MediaSyncPlugin,
+    private failedUploads: FailedUploadEntry[],
+  ) {
+    super(app);
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h2", { text: this.plugin.t("failedModalTitle") });
+
+    if (!this.failedUploads.length) {
+      contentEl.createEl("p", { text: this.plugin.t("failedModalEmpty") });
+      this.addCloseButton(contentEl);
+      return;
+    }
+
+    contentEl.createEl("p", { text: this.plugin.t("failedModalIntro") });
+    const list = contentEl.createDiv({ cls: "r2-media-sync-failed-list" });
+
+    for (const entry of this.failedUploads.slice(-20).reverse()) {
+      const item = list.createDiv({ cls: "r2-media-sync-failed-item" });
+      item.createEl("div", { text: `${this.plugin.t("failedModalTime")}: ${entry.time}` });
+      item.createEl("div", { text: `${this.plugin.t("failedModalNote")}: ${entry.markdownPath}` });
+      item.createEl("div", { text: `${this.plugin.t("failedModalImage")}: ${entry.imagePath}` });
+      item.createEl("div", { text: `${this.plugin.t("failedModalAttempts")}: ${entry.attempts}` });
+      item.createEl("div", { text: `${this.plugin.t("failedModalMessage")}: ${entry.message}` });
+    }
+
+    this.addCloseButton(contentEl);
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+
+  private addCloseButton(contentEl: HTMLElement): void {
+    const button = contentEl.createEl("button", { text: this.plugin.t("closeButton") });
+    button.addEventListener("click", () => this.close());
+  }
+}
+
+class ConfirmModal extends Modal {
+  constructor(
+    app: App,
+    private plugin: R2MediaSyncPlugin,
+    private title: string,
+    private message: string,
+    private confirmText: string,
+    private onConfirm: () => Promise<void>,
+  ) {
+    super(app);
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h2", { text: this.title });
+    contentEl.createEl("p", { text: this.message });
+
+    const actions = contentEl.createDiv({ cls: "r2-media-sync-modal-actions" });
+    const confirmButton = actions.createEl("button", { text: this.confirmText });
+    confirmButton.addClass("mod-cta");
+    confirmButton.addEventListener("click", () => {
+      void (async () => {
+        confirmButton.disabled = true;
+        await this.onConfirm();
+        this.close();
+      })();
+    });
+
+    const cancelButton = actions.createEl("button", { text: this.plugin.t("cancelButton") });
+    cancelButton.addEventListener("click", () => this.close());
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
   }
 }
 

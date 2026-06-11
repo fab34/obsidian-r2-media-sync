@@ -60,6 +60,7 @@ Those files can clutter the vault and consume sync storage. R2 Media Sync cleans
 - Reuse previous uploads by file hash to avoid uploading identical image content again.
 - Retry failed uploads before recording them as failed.
 - Keep a local failed upload log for troubleshooting.
+- View recent failed upload details in a modal.
 - Show the latest sync state in the Obsidian status bar.
 - Choose the plugin interface language: Auto, English, or Traditional Chinese.
 - Manual command to scan the current note.
@@ -186,6 +187,8 @@ When enabled, choose one cleanup mode:
 - `Move to Obsidian trash`: uses Obsidian's file trash handling.
 - `Move to review folder`: moves uploaded local files into a vault folder such as `_synced_media_trash`, preserving the original path under that folder so you can inspect before deleting.
 
+Use `Clear local review folder` from the command palette when you are ready to move review-folder files to Obsidian trash.
+
 ### Path Template
 
 Default:
@@ -235,6 +238,7 @@ Open the command palette and search for `R2 Media Sync`.
 - `Import settings from EzImage`
 - `Show failed upload summary`
 - `Clear failed upload log`
+- `Clear local review folder`
 
 ## Example
 

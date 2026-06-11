@@ -10,6 +10,7 @@
 - Documented vault scanning scope and exclusions more explicitly.
 - Added a language setting with English and Traditional Chinese interface text.
 - Added a local cleanup mode so uploaded local files can move to Obsidian trash or a review folder.
+- Added a failed upload details modal and a command to clear the local review folder.
 
 ## 0.1.5
 
