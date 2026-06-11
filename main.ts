@@ -23,6 +23,7 @@ interface R2MediaSyncSettings {
   publicUrl: string;
   pathTemplate: string;
   deleteLocalAfterUpload: boolean;
+  reuseUploadedByHash: boolean;
   processMarkdownImages: boolean;
   processWikiImages: boolean;
   processOnStartup: boolean;
@@ -30,6 +31,7 @@ interface R2MediaSyncSettings {
   includeFolders: string[];
   excludeFolders: string[];
   debounceMs: number;
+  maxUploadAttempts: number;
 }
 
 interface EzImageR2Settings {
@@ -54,6 +56,7 @@ const DEFAULT_SETTINGS: R2MediaSyncSettings = {
   publicUrl: "",
   pathTemplate: "{yyyy}/{MM}/{timestamp}-{random}.{ext}",
   deleteLocalAfterUpload: false,
+  reuseUploadedByHash: true,
   processMarkdownImages: true,
   processWikiImages: true,
   processOnStartup: false,
@@ -61,6 +64,7 @@ const DEFAULT_SETTINGS: R2MediaSyncSettings = {
   includeFolders: ["AI 工作區"],
   excludeFolders: [".obsidian", ".git", ".trash", "Templates"],
   debounceMs: 4000,
+  maxUploadAttempts: 3,
 };
 
 const SETTING_KEYS = new Set<keyof R2MediaSyncSettings>([
@@ -72,6 +76,7 @@ const SETTING_KEYS = new Set<keyof R2MediaSyncSettings>([
   "publicUrl",
   "pathTemplate",
   "deleteLocalAfterUpload",
+  "reuseUploadedByHash",
   "processMarkdownImages",
   "processWikiImages",
   "processOnStartup",
@@ -79,11 +84,15 @@ const SETTING_KEYS = new Set<keyof R2MediaSyncSettings>([
   "includeFolders",
   "excludeFolders",
   "debounceMs",
+  "maxUploadAttempts",
 ]);
 
 const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"]);
 const MARKDOWN_IMAGE_RE = /!\[([^\]]*)\]\(([^)]+)\)/g;
 const WIKILINK_IMAGE_RE = /!\[\[([^\]]+\.(?:png|jpe?g|gif|webp|bmp|svg))(?:\|[^\]]*)?\]\]/gi;
+const FAILED_UPLOAD_LOG = "failed_uploads.json";
+const UPLOAD_HISTORY_LOG = "upload_history.json";
+const MAX_FAILED_UPLOADS = 100;
 
 function hmac(key: crypto.BinaryLike, value: string): Buffer {
   return crypto.createHmac("sha256", key).update(value, "utf8").digest();
@@ -91,6 +100,10 @@ function hmac(key: crypto.BinaryLike, value: string): Buffer {
 
 function sha256Hex(value: crypto.BinaryLike): string {
   return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function encodeKey(value: string): string {
@@ -205,6 +218,7 @@ function parseStoredSettings(value: unknown): Partial<R2MediaSyncSettings> {
         }
         break;
       case "deleteLocalAfterUpload":
+      case "reuseUploadedByHash":
       case "processMarkdownImages":
       case "processWikiImages":
       case "processOnStartup":
@@ -212,6 +226,9 @@ function parseStoredSettings(value: unknown): Partial<R2MediaSyncSettings> {
         break;
       case "debounceMs":
         if (typeof raw === "number" && Number.isFinite(raw)) parsed.debounceMs = raw;
+        break;
+      case "maxUploadAttempts":
+        if (typeof raw === "number" && Number.isFinite(raw)) parsed.maxUploadAttempts = Math.max(1, Math.floor(raw));
         break;
       default:
         if (typeof raw === "string") parsed[key as keyof Pick<R2MediaSyncSettings, "accountId" | "accessKeyId" | "secretAccessKey" | "bucketName" | "publicUrl" | "pathTemplate">] = raw;
@@ -259,14 +276,34 @@ interface Replacement {
   image: TFile;
 }
 
+interface UploadHistoryEntry {
+  fileName: string;
+  key: string;
+  size: number;
+  uploadedAt: string;
+  url: string;
+}
+
+interface FailedUploadEntry {
+  time: string;
+  markdownPath: string;
+  imagePath: string;
+  message: string;
+  attempts: number;
+}
+
 export default class R2MediaSyncPlugin extends Plugin {
   settings: R2MediaSyncSettings;
   private queue = new Map<string, number>();
   private processing = new Set<string>();
   private lastStatus = "";
+  private statusBarEl: HTMLElement | null = null;
 
   async onload(): Promise<void> {
     await this.loadSettings();
+
+    this.statusBarEl = this.addStatusBarItem();
+    this.updateStatus("Idle");
 
     this.addSettingTab(new R2MediaSyncSettingTab(this.app, this));
 
@@ -300,6 +337,30 @@ export default class R2MediaSyncPlugin extends Plugin {
       },
     });
 
+    this.addCommand({
+      id: "show-failed-uploads",
+      name: "Show failed upload summary",
+      callback: async () => {
+        const failed = await this.readFailedUploads();
+        if (!failed.length) {
+          new Notice("R2 Media Sync: no failed uploads recorded.");
+          return;
+        }
+        const latest = failed[failed.length - 1];
+        new Notice(`R2 Media Sync: ${failed.length} failed upload(s). Latest: ${latest.imagePath}`);
+      },
+    });
+
+    this.addCommand({
+      id: "clear-failed-uploads",
+      name: "Clear failed upload log",
+      callback: async () => {
+        await this.writeJsonFile(FAILED_UPLOAD_LOG, []);
+        this.updateStatus("Failed upload log cleared.");
+        new Notice("R2 Media Sync: failed upload log cleared.");
+      },
+    });
+
     this.registerEvent(this.app.vault.on("create", (file) => this.handleVaultEvent(file)));
     this.registerEvent(this.app.vault.on("modify", (file) => this.handleVaultEvent(file)));
 
@@ -328,6 +389,14 @@ export default class R2MediaSyncPlugin extends Plugin {
 
   getLastStatus(): string {
     return this.lastStatus;
+  }
+
+  private updateStatus(message: string): void {
+    this.lastStatus = message;
+    if (this.statusBarEl) {
+      this.statusBarEl.setText(`R2 Media Sync: ${message}`);
+      this.statusBarEl.title = message;
+    }
   }
 
   private handleVaultEvent(file: unknown): void {
@@ -366,12 +435,13 @@ export default class R2MediaSyncPlugin extends Plugin {
   async scanConfiguredScope(manual: boolean): Promise<{ scanned: number; uploaded: number }> {
     const markdownFiles = this.app.vault.getMarkdownFiles().filter((file) => this.isPathInScope(file.path));
     let uploaded = 0;
+    this.updateStatus(`Scanning ${markdownFiles.length} Markdown file(s)...`);
     for (const file of markdownFiles) {
       uploaded += await this.processFile(file, false);
     }
-    this.lastStatus = `Scanned ${markdownFiles.length} Markdown file(s), uploaded ${uploaded} image(s).`;
+    this.updateStatus(`Scanned ${markdownFiles.length} Markdown file(s), uploaded ${uploaded} image(s).`);
     if (manual && uploaded === 0) {
-      this.lastStatus += " No local images found.";
+      this.updateStatus(`${this.lastStatus} No local images found.`);
     }
     return { scanned: markdownFiles.length, uploaded };
   }
@@ -474,12 +544,13 @@ export default class R2MediaSyncPlugin extends Plugin {
       const original = await this.app.vault.read(markdownFile);
       const replacements: Replacement[] = [];
       const uploaded = new Map<string, string>();
+      this.updateStatus(`Processing ${markdownFile.path}`);
 
       if (settings.processMarkdownImages) {
         for (const match of original.matchAll(MARKDOWN_IMAGE_RE)) {
           const image = await this.resolveImage(markdownFile, match[2]);
           if (!image || !this.isPathInScope(image.path)) continue;
-          if (!uploaded.has(image.path)) uploaded.set(image.path, await this.uploadImage(image, settings));
+          if (!uploaded.has(image.path)) uploaded.set(image.path, await this.uploadImage(image, settings, markdownFile.path));
           const alt = match[1] || "image";
           replacements.push({
             start: match.index ?? 0,
@@ -494,7 +565,7 @@ export default class R2MediaSyncPlugin extends Plugin {
         for (const match of original.matchAll(WIKILINK_IMAGE_RE)) {
           const image = await this.resolveImage(markdownFile, match[1]);
           if (!image || !this.isPathInScope(image.path)) continue;
-          if (!uploaded.has(image.path)) uploaded.set(image.path, await this.uploadImage(image, settings));
+          if (!uploaded.has(image.path)) uploaded.set(image.path, await this.uploadImage(image, settings, markdownFile.path));
           replacements.push({
             start: match.index ?? 0,
             end: (match.index ?? 0) + match[0].length,
@@ -506,6 +577,7 @@ export default class R2MediaSyncPlugin extends Plugin {
 
       if (!replacements.length) {
         if (manual) new Notice("R2 Media Sync: no local images found.");
+        this.updateStatus(`No local images found in ${markdownFile.path}`);
         return 0;
       }
 
@@ -534,7 +606,7 @@ export default class R2MediaSyncPlugin extends Plugin {
         }
       }
 
-      this.lastStatus = `Uploaded ${uploaded.size} image(s) for ${markdownFile.path}`;
+      this.updateStatus(`Uploaded ${uploaded.size} image(s) for ${markdownFile.path}`);
       new Notice(`R2 Media Sync: uploaded ${uploaded.size} image(s).`);
       return uploaded.size;
     } catch (error) {
@@ -545,10 +617,64 @@ export default class R2MediaSyncPlugin extends Plugin {
     }
   }
 
-  private async uploadImage(file: TFile, settings: R2MediaSyncSettings): Promise<string> {
+  private async uploadImage(file: TFile, settings: R2MediaSyncSettings, markdownPath: string): Promise<string> {
     const data = await this.app.vault.readBinary(file);
+    const hash = sha256Hex(Buffer.from(data));
+    if (settings.reuseUploadedByHash) {
+      const history = await this.readUploadHistory();
+      const existing = history[hash];
+      if (existing) {
+        this.updateStatus(`Reused existing R2 URL for ${file.path}`);
+        return existing.url;
+      }
+    }
+
     const key = objectKeyFor(file.name, settings.pathTemplate);
-    return this.uploadToR2(data, file.name, key, settings);
+    const url = await this.uploadToR2WithRetry(data, file.name, key, settings, markdownPath, file.path);
+    if (settings.reuseUploadedByHash) {
+      const history = await this.readUploadHistory();
+      history[hash] = {
+        fileName: file.name,
+        key,
+        size: file.stat.size,
+        uploadedAt: new Date().toISOString(),
+        url,
+      };
+      await this.writeJsonFile(UPLOAD_HISTORY_LOG, history);
+    }
+    return url;
+  }
+
+  private async uploadToR2WithRetry(
+    arrayBuffer: ArrayBuffer,
+    fileName: string,
+    key: string,
+    settings: R2MediaSyncSettings,
+    markdownPath: string,
+    imagePath: string,
+  ): Promise<string> {
+    const attempts = Math.max(1, Math.floor(settings.maxUploadAttempts || 1));
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        if (attempt > 1) this.updateStatus(`Retrying ${imagePath} (${attempt}/${attempts})`);
+        return await this.uploadToR2(arrayBuffer, fileName, key, settings);
+      } catch (error) {
+        lastError = error;
+        if (attempt < attempts) await sleep(1000 * Math.pow(2, attempt - 1));
+      }
+    }
+
+    const message = lastError instanceof Error ? lastError.message : String(lastError);
+    await this.recordFailedUpload({
+      time: new Date().toISOString(),
+      markdownPath,
+      imagePath,
+      message,
+      attempts,
+    });
+    throw new Error(`${message} (${attempts} attempt${attempts === 1 ? "" : "s"})`);
   }
 
   private async uploadToR2(
@@ -617,9 +743,41 @@ export default class R2MediaSyncPlugin extends Plugin {
     return `${settings.publicUrl.replace(/\/$/, "")}/${encodeKey(key)}`;
   }
 
+  private pluginDataPath(fileName: string): string {
+    return `${this.app.vault.configDir}/plugins/${this.manifest.id}/${fileName}`;
+  }
+
+  private async readJsonFile<T>(fileName: string, fallback: T): Promise<T> {
+    try {
+      const raw = await this.app.vault.adapter.read(this.pluginDataPath(fileName));
+      return JSON.parse(raw) as T;
+    } catch {
+      return fallback;
+    }
+  }
+
+  private async writeJsonFile(fileName: string, value: unknown): Promise<void> {
+    await this.app.vault.adapter.write(this.pluginDataPath(fileName), `${JSON.stringify(value, null, 2)}\n`);
+  }
+
+  private async readUploadHistory(): Promise<Record<string, UploadHistoryEntry>> {
+    return this.readJsonFile<Record<string, UploadHistoryEntry>>(UPLOAD_HISTORY_LOG, {});
+  }
+
+  private async readFailedUploads(): Promise<FailedUploadEntry[]> {
+    return this.readJsonFile<FailedUploadEntry[]>(FAILED_UPLOAD_LOG, []);
+  }
+
+  private async recordFailedUpload(entry: FailedUploadEntry): Promise<void> {
+    const failed = await this.readFailedUploads();
+    failed.push(entry);
+    await this.writeJsonFile(FAILED_UPLOAD_LOG, failed.slice(-MAX_FAILED_UPLOADS));
+    this.updateStatus(`Recorded failed upload: ${entry.imagePath}`);
+  }
+
   reportError(prefix: string, error: unknown, showNotice = true): void {
     const message = error instanceof Error ? error.message : String(error);
-    this.lastStatus = `${prefix}: ${message}`;
+    this.updateStatus(`${prefix}: ${message}`);
     console.error(prefix, error);
     if (showNotice) new Notice(`${prefix}: ${message}`);
   }
@@ -681,6 +839,19 @@ class R2MediaSyncSettingTab extends PluginSettingTab {
         .setValue(this.plugin.settings.deleteLocalAfterUpload)
         .onChange(async (value) => {
           this.plugin.settings.deleteLocalAfterUpload = value;
+          await this.plugin.saveSettings();
+          if (value) {
+            new Notice("R2 Media Sync: local files will be moved to trash after successful upload and link rewrite.");
+          }
+        }));
+
+    new Setting(containerEl)
+      .setName("Reuse uploads by file hash")
+      .setDesc("Avoid uploading the same image content more than once. The plugin stores a local hash-to-URL history.")
+      .addToggle((toggle) => toggle
+        .setValue(this.plugin.settings.reuseUploadedByHash)
+        .onChange(async (value) => {
+          this.plugin.settings.reuseUploadedByHash = value;
           await this.plugin.saveSettings();
         }));
 
@@ -758,6 +929,19 @@ class R2MediaSyncSettingTab extends PluginSettingTab {
           const parsed = Number.parseInt(value, 10);
           if (!Number.isNaN(parsed) && parsed >= 500) {
             this.plugin.settings.debounceMs = parsed;
+            await this.plugin.saveSettings();
+          }
+        }));
+
+    new Setting(containerEl)
+      .setName("Upload retry attempts")
+      .setDesc("Number of times to try each R2 upload before recording it as failed.")
+      .addText((text) => text
+        .setValue(String(this.plugin.settings.maxUploadAttempts))
+        .onChange(async (value) => {
+          const parsed = Number.parseInt(value, 10);
+          if (!Number.isNaN(parsed) && parsed >= 1 && parsed <= 10) {
+            this.plugin.settings.maxUploadAttempts = parsed;
             await this.plugin.saveSettings();
           }
         }));

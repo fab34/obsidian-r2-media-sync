@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Added upload retries with configurable attempt count.
+- Added a local failed upload log and commands to show or clear it.
+- Added local hash-based upload history so identical image content can reuse an existing R2 URL.
+- Added a status bar item that shows current sync activity.
+- Added clearer safety feedback when local image deletion is enabled.
+- Documented vault scanning scope and exclusions more explicitly.
+
 ## 0.1.5
 
 - Removed the settings tab heading to satisfy community review wording rules.

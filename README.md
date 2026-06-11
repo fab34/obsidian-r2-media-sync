@@ -55,6 +55,10 @@ Those files can clutter the vault and consume sync storage. R2 Media Sync cleans
 - Configurable excluded folders, such as `.obsidian`, `.git`, `Templates`, or attachment folders.
 - Toggle support for Markdown image links and wiki image embeds separately.
 - Use existing EzImage R2 settings or enter R2 credentials directly.
+- Reuse previous uploads by file hash to avoid uploading identical image content again.
+- Retry failed uploads before recording them as failed.
+- Keep a local failed upload log for troubleshooting.
+- Show the latest sync state in the Obsidian status bar.
 - Manual command to scan the current note.
 - Manual command to scan the configured scope.
 - Manual command to import EzImage settings.
@@ -66,6 +70,8 @@ R2 Media Sync uses conservative defaults for first-time installs:
 - It does not scan on startup by default.
 - It does not delete local images by default.
 - You can run a manual scan on the current note before enabling broader automation.
+- If local deletion is enabled, files are moved through Obsidian's trash handling after upload and link rewrite.
+- Failed uploads are recorded locally so you can inspect and retry later instead of losing track of partial failures.
 
 After confirming your R2 settings, public URL, and scan scope, you can opt in to startup scans or local deletion from the plugin settings.
 
@@ -77,6 +83,19 @@ After confirming your R2 settings, public URL, and scan scope, you can opt in to
 - Credentials are stored locally in Obsidian plugin data when using manual mode.
 - When using EzImage mode, this plugin reads the EzImage `data.json` file from your vault config folder locally and does not modify it.
 - Public Markdown links will contain your configured public R2 URL.
+- Upload history and failed upload logs are stored locally in this plugin's data folder.
+
+## Vault Access
+
+R2 Media Sync scans Markdown files so it can find local media references that were created by PDF converters, importers, AI tools, or other automation.
+
+You can limit this behavior by:
+
+- Choosing `Only included folders` instead of `Whole vault`.
+- Setting included folders such as `AI 工作區` or a specific project folder.
+- Excluding folders such as `.obsidian`, `.git`, `.trash`, `Templates`, or attachment folders.
+
+The plugin only uploads image files that are referenced by Markdown notes and are inside the configured scan scope.
 
 ## Requirements
 
@@ -142,6 +161,11 @@ Manual fields:
 - Public URL
 - Path template
 
+### Reliability
+
+- `Reuse uploads by file hash`: avoids uploading identical image content more than once by storing a local hash-to-URL history.
+- `Upload retry attempts`: retries each R2 upload before the image is recorded in the failed upload log.
+
 ### Path Template
 
 Default:
@@ -189,6 +213,8 @@ Open the command palette and search for `R2 Media Sync`.
 - `Upload local images in current note`
 - `Scan configured scope now`
 - `Import settings from EzImage`
+- `Show failed upload summary`
+- `Clear failed upload log`
 
 ## Example
 
