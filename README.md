@@ -59,6 +59,7 @@ Those files can clutter the vault and consume sync storage. R2 Media Sync cleans
 - Retry failed uploads before recording them as failed.
 - Keep a local failed upload log for troubleshooting.
 - Show the latest sync state in the Obsidian status bar.
+- Choose the plugin interface language: Auto, English, or Traditional Chinese.
 - Manual command to scan the current note.
 - Manual command to scan the configured scope.
 - Manual command to import EzImage settings.
@@ -144,6 +145,14 @@ Manual installation:
 ## Configuration
 
 Open `Settings -> R2 Media Sync`.
+
+### Language
+
+Choose one:
+
+- `Auto`: follow your system/browser language when it is Traditional Chinese, otherwise English.
+- `English`
+- `Traditional Chinese`
 
 ### R2 Settings Source
 

@@ -8,6 +8,7 @@
 - Added a status bar item that shows current sync activity.
 - Added clearer safety feedback when local image deletion is enabled.
 - Documented vault scanning scope and exclusions more explicitly.
+- Added a language setting with English and Traditional Chinese interface text.
 
 ## 0.1.5
 
