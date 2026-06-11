@@ -98,7 +98,7 @@ If you use the BRAT plugin:
 3. Enter:
 
 ```text
-fab34/obsidian-r2-media-sync
+fab34/cloudflare-media-sync
 ```
 
 4. Enable `R2 Media Sync` in Community plugins.
@@ -252,4 +252,4 @@ This plugin intentionally only processes image files that are referenced by Mark
 
 ## License
 
-[MIT](https://github.com/fab34/obsidian-r2-media-sync/blob/main/LICENSE) — 歡迎自由使用、修改、散布。Issue 與 PR 都歡迎。
+[MIT](https://github.com/fab34/cloudflare-media-sync/blob/main/LICENSE) — 歡迎自由使用、修改、散布。Issue 與 PR 都歡迎。

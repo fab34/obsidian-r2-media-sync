@@ -28,7 +28,7 @@ When opening a pull request to `obsidianmd/obsidian-releases`, add:
   "name": "R2 Media Sync",
   "author": "fab34",
   "description": "Automatically upload local Obsidian media assets to Cloudflare R2 and rewrite Markdown links.",
-  "repo": "fab34/obsidian-r2-media-sync"
+  "repo": "fab34/cloudflare-media-sync"
 }
 ```
 
