@@ -75,7 +75,7 @@ After confirming your R2 settings, public URL, and scan scope, you can opt in to
 - No analytics.
 - No remote service other than the Cloudflare R2 endpoint you configure.
 - Credentials are stored locally in Obsidian plugin data when using manual mode.
-- When using EzImage mode, this plugin reads `.obsidian/plugins/ezimage/data.json` locally and does not modify it.
+- When using EzImage mode, this plugin reads the EzImage `data.json` file from your vault config folder locally and does not modify it.
 - Public Markdown links will contain your configured public R2 URL.
 
 ## Requirements

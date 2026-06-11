@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.3
+
+- Removed the word "Obsidian" from the plugin manifest description to satisfy community review requirements.
+- Replaced direct settings heading DOM creation with the Obsidian `Setting` API.
+- Read the vault config directory from `app.vault.configDir` instead of assuming `.obsidian`.
+- Use `fileManager.trashFile` for local cleanup so file deletion respects the user's vault trash settings.
+- Removed the `builtin-modules` development dependency.
+- Tightened JSON parsing and async callback handling to reduce automated review warnings.
+
 ## 0.1.1
 
 - Fixed scan notice spam so bulk scans show one summary notice instead of one notice per Markdown file.

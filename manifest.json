@@ -1,9 +1,9 @@
 {
   "id": "cloudflare-media-sync",
   "name": "R2 Media Sync",
-  "version": "0.1.2",
-  "minAppVersion": "1.5.0",
-  "description": "Automatically upload local Obsidian media assets to Cloudflare R2 and rewrite Markdown links.",
+  "version": "0.1.3",
+  "minAppVersion": "1.6.6",
+  "description": "Automatically upload local media assets to Cloudflare R2 and rewrite Markdown links.",
   "author": "fab34",
   "authorUrl": "https://github.com/fab34",
   "isDesktopOnly": true

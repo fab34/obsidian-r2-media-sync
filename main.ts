@@ -32,6 +32,19 @@ interface R2MediaSyncSettings {
   debounceMs: number;
 }
 
+interface EzImageR2Settings {
+  accountId: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  bucketName: string;
+  publicUrl: string;
+}
+
+interface EzImageSettingsFile {
+  r2: EzImageR2Settings;
+  pathTemplate?: string;
+}
+
 const DEFAULT_SETTINGS: R2MediaSyncSettings = {
   configSource: "ezimage",
   accountId: "",
@@ -105,6 +118,52 @@ function isRemote(target: string): boolean {
 
 function stripAngleBrackets(value: string): string {
   return value.startsWith("<") && value.endsWith(">") ? value.slice(1, -1) : value;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function stringProp(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function parseEzImageSettings(raw: string): EzImageSettingsFile {
+  const data: unknown = JSON.parse(raw);
+  if (!isRecord(data) || !isRecord(data.r2)) {
+    throw new Error("EzImage settings file is missing R2 configuration.");
+  }
+
+  const accountId = stringProp(data.r2, "accountId");
+  const accessKeyId = stringProp(data.r2, "accessKeyId");
+  const secretAccessKey = stringProp(data.r2, "secretAccessKey");
+  const bucketName = stringProp(data.r2, "bucketName");
+  const publicUrl = stringProp(data.r2, "publicUrl");
+  const pathTemplate = stringProp(data, "pathTemplate") ?? undefined;
+
+  const missing = [
+    ["accountId", accountId],
+    ["accessKeyId", accessKeyId],
+    ["secretAccessKey", secretAccessKey],
+    ["bucketName", bucketName],
+    ["publicUrl", publicUrl],
+  ].filter(([, value]) => value === null);
+
+  if (missing.length) {
+    throw new Error(`EzImage R2 setting missing: ${missing.map(([key]) => key).join(", ")}`);
+  }
+
+  return {
+    r2: {
+      accountId: accountId!,
+      accessKeyId: accessKeyId!,
+      secretAccessKey: secretAccessKey!,
+      bucketName: bucketName!,
+      publicUrl: publicUrl!,
+    },
+    pathTemplate,
+  };
 }
 
 function objectKeyFor(fileName: string, template: string): string {
@@ -210,6 +269,10 @@ export default class R2MediaSyncPlugin extends Plugin {
     await this.saveData(this.settings);
   }
 
+  getLastStatus(): string {
+    return this.lastStatus;
+  }
+
   private handleVaultEvent(file: unknown): void {
     if (!(file instanceof TFile)) return;
     if (!this.isPathInScope(file.path)) return;
@@ -233,10 +296,12 @@ export default class R2MediaSyncPlugin extends Plugin {
   private enqueue(path: string, delayMs: number): void {
     const previous = this.queue.get(path);
     if (previous) window.clearTimeout(previous);
-    const timeoutId = window.setTimeout(async () => {
-      this.queue.delete(path);
-      const file = this.app.vault.getAbstractFileByPath(path);
-      if (file instanceof TFile) await this.processFile(file, false);
+    const timeoutId = window.setTimeout(() => {
+      void (async () => {
+        this.queue.delete(path);
+        const file = this.app.vault.getAbstractFileByPath(path);
+        if (file instanceof TFile) await this.processFile(file, false);
+      })();
     }, Math.max(500, delayMs));
     this.queue.set(path, timeoutId);
   }
@@ -278,7 +343,7 @@ export default class R2MediaSyncPlugin extends Plugin {
     try {
       const imported = await this.readEzImageSettings();
       return Object.assign({}, this.settings, imported);
-    } catch (error) {
+    } catch {
       this.validateR2Settings(this.settings);
       return this.settings;
     }
@@ -299,12 +364,10 @@ export default class R2MediaSyncPlugin extends Plugin {
   }
 
   private async readEzImageSettings(): Promise<Partial<R2MediaSyncSettings>> {
-    const raw = await this.app.vault.adapter.read(".obsidian/plugins/ezimage/data.json");
-    const data = JSON.parse(raw);
-    const r2 = data.r2 ?? {};
-    for (const key of ["accountId", "accessKeyId", "secretAccessKey", "bucketName", "publicUrl"]) {
-      if (!r2[key]) throw new Error(`EzImage R2 setting missing: ${key}`);
-    }
+    const configDir = this.app.vault.configDir;
+    const raw = await this.app.vault.adapter.read(`${configDir}/plugins/ezimage/data.json`);
+    const data = parseEzImageSettings(raw);
+    const r2 = data.r2;
     return {
       accountId: r2.accountId,
       accessKeyId: r2.accessKeyId,
@@ -403,8 +466,7 @@ export default class R2MediaSyncPlugin extends Plugin {
           const image = this.app.vault.getAbstractFileByPath(item.image.path);
           if (image instanceof TFile) {
             try {
-              // Force deletion so cleanup does not depend on system/local trash behavior.
-              await this.app.vault.delete(image, true);
+              await this.app.fileManager.trashFile(image);
             } catch (error) {
               throw new Error(
                 `Uploaded and rewrote links, but failed to delete local image: ${item.image.path}. ` +
@@ -518,7 +580,7 @@ class R2MediaSyncSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl("h2", { text: "R2 Media Sync" });
+    new Setting(containerEl).setName("R2 Media Sync").setHeading();
 
     new Setting(containerEl)
       .setName("R2 settings source")
@@ -658,7 +720,7 @@ class R2MediaSyncSettingTab extends PluginSettingTab {
         }));
 
     const status = containerEl.createDiv({ cls: "r2-media-sync-status" });
-    status.setText(this.plugin["lastStatus"] || "No recent activity.");
+    status.setText(this.plugin.getLastStatus() || "No recent activity.");
   }
 
   private addTextSetting(
