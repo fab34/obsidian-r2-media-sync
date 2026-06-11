@@ -637,8 +637,6 @@ class R2MediaSyncSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    new Setting(containerEl).setName("Settings").setHeading();
-
     new Setting(containerEl)
       .setName("R2 settings source")
       .setDesc("Use EzImage settings when available, or store R2 credentials in this plugin.")

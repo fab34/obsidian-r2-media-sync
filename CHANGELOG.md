@@ -1,8 +1,12 @@
 # Changelog
 
+## 0.1.5
+
+- Removed the settings tab heading to satisfy community review wording rules.
+
 ## 0.1.4
 
-- Renamed the settings page heading from the plugin name to "Settings" for community review compliance.
+- Renamed the settings tab heading for community review compliance.
 - Added validation for stored plugin data before merging settings to avoid unsafe assignment warnings.
 
 ## 0.1.3
