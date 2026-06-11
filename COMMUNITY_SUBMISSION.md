@@ -24,7 +24,7 @@ When opening a pull request to `obsidianmd/obsidian-releases`, add:
 
 ```json
 {
-  "id": "r2-media-sync",
+  "id": "cloudflare-media-sync",
   "name": "R2 Media Sync",
   "author": "fab34",
   "description": "Automatically upload local Obsidian media assets to Cloudflare R2 and rewrite Markdown links.",

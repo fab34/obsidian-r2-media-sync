@@ -114,7 +114,7 @@ Manual installation:
 2. Create this folder in your vault:
 
 ```text
-.obsidian/plugins/r2-media-sync/
+.obsidian/plugins/cloudflare-media-sync/
 ```
 
 3. Copy the three files into that folder.

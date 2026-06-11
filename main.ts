@@ -401,7 +401,17 @@ export default class R2MediaSyncPlugin extends Plugin {
           if (deleted.has(item.image.path)) continue;
           deleted.add(item.image.path);
           const image = this.app.vault.getAbstractFileByPath(item.image.path);
-          if (image instanceof TFile) await this.app.vault.delete(image);
+          if (image instanceof TFile) {
+            try {
+              // Force deletion so cleanup does not depend on system/local trash behavior.
+              await this.app.vault.delete(image, true);
+            } catch (error) {
+              throw new Error(
+                `Uploaded and rewrote links, but failed to delete local image: ${item.image.path}. ` +
+                (error instanceof Error ? error.message : String(error)),
+              );
+            }
+          }
         }
       }
 
