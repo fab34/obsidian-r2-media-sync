@@ -48,7 +48,9 @@ Those files can clutter the vault and consume sync storage. R2 Media Sync cleans
 
 ## Features
 
-- Configurable local deletion after upload.
+- Configurable local cleanup after upload:
+  - move to Obsidian trash
+  - move to a review folder before manual cleanup
 - Configurable scan scope:
   - whole vault
   - selected folders only
@@ -71,7 +73,7 @@ R2 Media Sync uses conservative defaults for first-time installs:
 - It does not scan on startup by default.
 - It does not delete local images by default.
 - You can run a manual scan on the current note before enabling broader automation.
-- If local deletion is enabled, files are moved through Obsidian's trash handling after upload and link rewrite.
+- If local cleanup is enabled, files can be moved through Obsidian's trash handling or moved to a review folder after upload and link rewrite.
 - Failed uploads are recorded locally so you can inspect and retry later instead of losing track of partial failures.
 
 After confirming your R2 settings, public URL, and scan scope, you can opt in to startup scans or local deletion from the plugin settings.
@@ -175,6 +177,15 @@ Manual fields:
 - `Reuse uploads by file hash`: avoids uploading identical image content more than once by storing a local hash-to-URL history.
 - `Upload retry attempts`: retries each R2 upload before the image is recorded in the failed upload log.
 
+### Local Cleanup
+
+Local cleanup is disabled by default.
+
+When enabled, choose one cleanup mode:
+
+- `Move to Obsidian trash`: uses Obsidian's file trash handling.
+- `Move to review folder`: moves uploaded local files into a vault folder such as `_synced_media_trash`, preserving the original path under that folder so you can inspect before deleting.
+
 ### Path Template
 
 Default:
@@ -213,7 +224,7 @@ Recommended exclusions:
 3. Open a note with one or two local test images.
 4. Run `R2 Media Sync: Upload local images in current note`.
 5. Confirm the note was rewritten to public R2 URLs.
-6. Enable local deletion or startup scans only after the manual test behaves as expected.
+6. Enable local cleanup or startup scans only after the manual test behaves as expected.
 
 ## Commands
 

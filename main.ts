@@ -14,6 +14,7 @@ import * as crypto from "crypto";
 type ConfigSource = "manual" | "ezimage";
 type ScanScopeMode = "vault" | "folders";
 type UiLanguage = "auto" | "en" | "zh-TW";
+type LocalCleanupMode = "trash" | "folder";
 
 interface R2MediaSyncSettings {
   uiLanguage: UiLanguage;
@@ -25,6 +26,8 @@ interface R2MediaSyncSettings {
   publicUrl: string;
   pathTemplate: string;
   deleteLocalAfterUpload: boolean;
+  localCleanupMode: LocalCleanupMode;
+  localCleanupFolder: string;
   reuseUploadedByHash: boolean;
   processMarkdownImages: boolean;
   processWikiImages: boolean;
@@ -59,6 +62,8 @@ const DEFAULT_SETTINGS: R2MediaSyncSettings = {
   publicUrl: "",
   pathTemplate: "{yyyy}/{MM}/{timestamp}-{random}.{ext}",
   deleteLocalAfterUpload: false,
+  localCleanupMode: "trash",
+  localCleanupFolder: "_synced_media_trash",
   reuseUploadedByHash: true,
   processMarkdownImages: true,
   processWikiImages: true,
@@ -80,6 +85,8 @@ const SETTING_KEYS = new Set<keyof R2MediaSyncSettings>([
   "publicUrl",
   "pathTemplate",
   "deleteLocalAfterUpload",
+  "localCleanupMode",
+  "localCleanupFolder",
   "reuseUploadedByHash",
   "processMarkdownImages",
   "processWikiImages",
@@ -117,6 +124,7 @@ const TEXT = {
     uploadedFor: "Uploaded {count} image(s) for {path}",
     uploadedNotice: "Uploaded {count} image(s).",
     deleteEnabledNotice: "Local files will be moved to trash after successful upload and link rewrite.",
+    movedToReviewFolder: "Moved local file to review folder: {path}",
     importedEzImage: "Imported EzImage R2 settings.",
     importEzImageFailed: "Could not import EzImage settings",
     startupScanFailed: "Startup scan failed",
@@ -152,6 +160,12 @@ const TEXT = {
     pathTemplateDesc: "Supported tokens: {yyyy}, {MM}, {dd}, {hh}, {mm}, {ss}, {timestamp}, {random}, {name}, {ext}.",
     deleteLocalName: "Delete local image after upload",
     deleteLocalDesc: "Off by default. Enable only if you are comfortable removing local files after successful upload.",
+    cleanupModeName: "Local cleanup mode",
+    cleanupModeDesc: "Choose what happens to local files after upload and link rewrite.",
+    cleanupMoveToTrash: "Move to Obsidian trash",
+    cleanupMoveToFolder: "Move to review folder",
+    cleanupFolderName: "Review folder",
+    cleanupFolderDesc: "Vault-relative folder used when cleanup mode is set to review folder.",
     reuseHashName: "Reuse uploads by file hash",
     reuseHashDesc: "Avoid uploading the same image content more than once. The plugin stores a local hash-to-URL history.",
     processMarkdownName: "Process Markdown image links",
@@ -195,6 +209,7 @@ const TEXT = {
     uploadedFor: "{path} 已上傳 {count} 張圖片",
     uploadedNotice: "已上傳 {count} 張圖片。",
     deleteEnabledNotice: "成功上傳並改寫連結後，本機檔案會移到 Obsidian 的垃圾桶。",
+    movedToReviewFolder: "已將本機檔案移到檢查資料夾：{path}",
     importedEzImage: "已匯入 EzImage 的 R2 設定。",
     importEzImageFailed: "無法匯入 EzImage 設定",
     startupScanFailed: "啟動掃描失敗",
@@ -230,6 +245,12 @@ const TEXT = {
     pathTemplateDesc: "支援 token：{yyyy}, {MM}, {dd}, {hh}, {mm}, {ss}, {timestamp}, {random}, {name}, {ext}。",
     deleteLocalName: "上傳後刪除本機圖片",
     deleteLocalDesc: "預設關閉。確認你能接受成功上傳後移除本機檔案，再啟用此選項。",
+    cleanupModeName: "本機清理方式",
+    cleanupModeDesc: "選擇成功上傳並改寫連結後，要如何處理本機檔案。",
+    cleanupMoveToTrash: "移到 Obsidian 垃圾桶",
+    cleanupMoveToFolder: "移到檢查資料夾",
+    cleanupFolderName: "檢查資料夾",
+    cleanupFolderDesc: "當清理方式設為檢查資料夾時使用的 vault 相對資料夾。",
     reuseHashName: "依檔案雜湊重用上傳結果",
     reuseHashDesc: "避免相同圖片內容重複上傳。插件會在本機保存雜湊與 URL 對應紀錄。",
     processMarkdownName: "處理 Markdown 圖片連結",
@@ -392,6 +413,9 @@ function parseStoredSettings(value: unknown): Partial<R2MediaSyncSettings> {
       case "scanScopeMode":
         if (raw === "vault" || raw === "folders") parsed.scanScopeMode = raw;
         break;
+      case "localCleanupMode":
+        if (raw === "trash" || raw === "folder") parsed.localCleanupMode = raw;
+        break;
       case "includeFolders":
       case "excludeFolders":
         if (Array.isArray(raw) && raw.every((item) => typeof item === "string")) {
@@ -412,7 +436,7 @@ function parseStoredSettings(value: unknown): Partial<R2MediaSyncSettings> {
         if (typeof raw === "number" && Number.isFinite(raw)) parsed.maxUploadAttempts = Math.max(1, Math.floor(raw));
         break;
       default:
-        if (typeof raw === "string") parsed[key as keyof Pick<R2MediaSyncSettings, "accountId" | "accessKeyId" | "secretAccessKey" | "bucketName" | "publicUrl" | "pathTemplate">] = raw;
+        if (typeof raw === "string") parsed[key as keyof Pick<R2MediaSyncSettings, "accountId" | "accessKeyId" | "secretAccessKey" | "bucketName" | "publicUrl" | "pathTemplate" | "localCleanupFolder">] = raw;
         break;
     }
   }
@@ -781,10 +805,10 @@ export default class R2MediaSyncPlugin extends Plugin {
           const image = this.app.vault.getAbstractFileByPath(item.image.path);
           if (image instanceof TFile) {
             try {
-              await this.app.fileManager.trashFile(image);
+              await this.cleanupLocalImage(image, settings);
             } catch (error) {
               throw new Error(
-                `Uploaded and rewrote links, but failed to delete local image: ${item.image.path}. ` +
+                `Uploaded and rewrote links, but failed to clean up local image: ${item.image.path}. ` +
                 (error instanceof Error ? error.message : String(error)),
               );
             }
@@ -800,6 +824,51 @@ export default class R2MediaSyncPlugin extends Plugin {
       return 0;
     } finally {
       this.processing.delete(markdownFile.path);
+    }
+  }
+
+  private async cleanupLocalImage(image: TFile, settings: R2MediaSyncSettings): Promise<void> {
+    if (settings.localCleanupMode === "folder") {
+      const target = await this.nextReviewFolderPath(image, settings.localCleanupFolder);
+      await this.ensureFolder(target.parentPath);
+      await this.app.vault.rename(image, target.filePath);
+      this.updateStatus(this.t("movedToReviewFolder", { path: target.filePath }));
+      return;
+    }
+
+    await this.app.fileManager.trashFile(image);
+  }
+
+  private async nextReviewFolderPath(image: TFile, folder: string): Promise<{ parentPath: string; filePath: string }> {
+    const root = normalizePath(folder || DEFAULT_SETTINGS.localCleanupFolder).replace(/^\/+|\/+$/g, "");
+    const rawTarget = normalizePath(`${root}/${image.path}`);
+    const parentPath = rawTarget.includes("/") ? rawTarget.slice(0, rawTarget.lastIndexOf("/")) : "";
+    const ext = image.extension ? `.${image.extension}` : "";
+    const stem = ext ? rawTarget.slice(0, -ext.length) : rawTarget;
+
+    let filePath = rawTarget;
+    let index = 1;
+    while (await this.app.vault.adapter.exists(filePath)) {
+      filePath = `${stem}-${Date.now()}-${index}${ext}`;
+      index += 1;
+    }
+
+    return {
+      parentPath: filePath.includes("/") ? filePath.slice(0, filePath.lastIndexOf("/")) : parentPath,
+      filePath,
+    };
+  }
+
+  private async ensureFolder(path: string): Promise<void> {
+    const normalized = normalizePath(path).replace(/^\/+|\/+$/g, "");
+    if (!normalized) return;
+
+    let current = "";
+    for (const part of normalized.split("/")) {
+      current = current ? `${current}/${part}` : part;
+      if (!(await this.app.vault.adapter.exists(current))) {
+        await this.app.vault.createFolder(current);
+      }
     }
   }
 
@@ -1043,7 +1112,31 @@ class R2MediaSyncSettingTab extends PluginSettingTab {
           if (value) {
             new Notice(`R2 Media Sync: ${this.plugin.t("deleteEnabledNotice")}`);
           }
+          this.display();
         }));
+
+    if (this.plugin.settings.deleteLocalAfterUpload) {
+      new Setting(containerEl)
+        .setName(this.plugin.t("cleanupModeName"))
+        .setDesc(this.plugin.t("cleanupModeDesc"))
+        .addDropdown((dropdown) => dropdown
+          .addOption("trash", this.plugin.t("cleanupMoveToTrash"))
+          .addOption("folder", this.plugin.t("cleanupMoveToFolder"))
+          .setValue(this.plugin.settings.localCleanupMode)
+          .onChange(async (value: LocalCleanupMode) => {
+            this.plugin.settings.localCleanupMode = value;
+            await this.plugin.saveSettings();
+            this.display();
+          }));
+
+      if (this.plugin.settings.localCleanupMode === "folder") {
+        this.addTextSetting(
+          this.plugin.t("cleanupFolderName"),
+          this.plugin.t("cleanupFolderDesc"),
+          "localCleanupFolder",
+        );
+      }
+    }
 
     new Setting(containerEl)
       .setName(this.plugin.t("reuseHashName"))
@@ -1165,7 +1258,7 @@ class R2MediaSyncSettingTab extends PluginSettingTab {
   private addTextSetting(
     name: string,
     desc: string,
-    key: keyof Pick<R2MediaSyncSettings, "accountId" | "accessKeyId" | "secretAccessKey" | "bucketName" | "publicUrl" | "pathTemplate">,
+    key: keyof Pick<R2MediaSyncSettings, "accountId" | "accessKeyId" | "secretAccessKey" | "bucketName" | "publicUrl" | "pathTemplate" | "localCleanupFolder">,
     password = false,
   ): void {
     new Setting(this.containerEl)
