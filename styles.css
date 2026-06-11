@@ -25,3 +25,27 @@
   justify-content: flex-end;
   margin-top: 16px;
 }
+
+.r2-media-sync-dashboard-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  margin: 12px 0;
+}
+
+.r2-media-sync-dashboard-metric {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 10px;
+}
+
+.r2-media-sync-dashboard-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin-bottom: 4px;
+}
+
+.r2-media-sync-dashboard-value {
+  font-size: var(--font-ui-small);
+  overflow-wrap: anywhere;
+}

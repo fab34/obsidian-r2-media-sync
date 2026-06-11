@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added a sync dashboard with status, scan scope, upload history, failure, and review folder metrics.
+- Added a re-scan action to failed upload entries.
 - Added upload retries with configurable attempt count.
 - Added a local failed upload log and commands to show or clear it.
 - Added local hash-based upload history so identical image content can reuse an existing R2 URL.

@@ -136,6 +136,19 @@ const TEXT = {
     cmdShowFailed: "Show failed upload summary",
     cmdClearFailed: "Clear failed upload log",
     cmdClearReviewFolder: "Clear local review folder",
+    cmdOpenDashboard: "Open sync dashboard",
+    dashboardTitle: "Sync dashboard",
+    dashboardLastStatus: "Last status",
+    dashboardMarkdownInScope: "Markdown files in scope",
+    dashboardUploadHistory: "Known uploaded file hashes",
+    dashboardFailedUploads: "Failed uploads",
+    dashboardReviewFolder: "Review folder",
+    dashboardReviewFiles: "Review files",
+    dashboardReviewSize: "Review size",
+    dashboardScanButton: "Scan now",
+    dashboardFailedButton: "View failed uploads",
+    retryNoteButton: "Re-scan note",
+    retryNoteMissing: "Source note not found: {path}",
     failedModalTitle: "Failed uploads",
     failedModalEmpty: "No failed uploads recorded.",
     failedModalIntro: "Recent failed uploads are listed below. Re-scan the note after fixing the underlying issue.",
@@ -237,6 +250,19 @@ const TEXT = {
     cmdShowFailed: "顯示失敗上傳摘要",
     cmdClearFailed: "清除失敗上傳紀錄",
     cmdClearReviewFolder: "清理本機檢查資料夾",
+    cmdOpenDashboard: "開啟同步儀表板",
+    dashboardTitle: "同步儀表板",
+    dashboardLastStatus: "最近狀態",
+    dashboardMarkdownInScope: "掃描範圍內 Markdown 數",
+    dashboardUploadHistory: "已知上傳雜湊數",
+    dashboardFailedUploads: "失敗上傳",
+    dashboardReviewFolder: "檢查資料夾",
+    dashboardReviewFiles: "檢查檔案數",
+    dashboardReviewSize: "檢查檔案容量",
+    dashboardScanButton: "立即掃描",
+    dashboardFailedButton: "查看失敗上傳",
+    retryNoteButton: "重新掃描筆記",
+    retryNoteMissing: "找不到來源筆記：{path}",
     failedModalTitle: "失敗上傳",
     failedModalEmpty: "目前沒有失敗上傳紀錄。",
     failedModalIntro: "以下列出最近的失敗上傳。修正原因後，可重新掃描來源筆記。",
@@ -316,6 +342,18 @@ type TextKey = keyof typeof TEXT.en;
 function formatText(template: string, values?: Record<string, string | number>): string {
   if (!values) return template;
   return template.replace(/\{(\w+)\}/g, (match, key) => String(values[key] ?? match));
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = bytes / 1024;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(value >= 10 ? 1 : 2)} ${units[unitIndex]}`;
 }
 
 function preferredLanguage(setting: UiLanguage): "en" | "zh-TW" {
@@ -530,6 +568,16 @@ interface FailedUploadEntry {
   attempts: number;
 }
 
+interface DashboardData {
+  failedUploads: FailedUploadEntry[];
+  lastStatus: string;
+  markdownInScope: number;
+  reviewFileCount: number;
+  reviewFolder: string;
+  reviewFolderBytes: number;
+  uploadHistoryCount: number;
+}
+
 export default class R2MediaSyncPlugin extends Plugin {
   settings: R2MediaSyncSettings;
   private queue = new Map<string, number>();
@@ -621,6 +669,14 @@ export default class R2MediaSyncPlugin extends Plugin {
       },
     });
 
+    this.addCommand({
+      id: "open-sync-dashboard",
+      name: this.t("cmdOpenDashboard"),
+      callback: async () => {
+        new DashboardModal(this.app, this).open();
+      },
+    });
+
     this.registerEvent(this.app.vault.on("create", (file) => this.handleVaultEvent(file)));
     this.registerEvent(this.app.vault.on("modify", (file) => this.handleVaultEvent(file)));
 
@@ -649,6 +705,23 @@ export default class R2MediaSyncPlugin extends Plugin {
 
   getLastStatus(): string {
     return this.lastStatus;
+  }
+
+  async getDashboardData(): Promise<DashboardData> {
+    const failedUploads = await this.readFailedUploads();
+    const uploadHistory = await this.readUploadHistory();
+    const reviewFiles = this.getReviewFolderFiles();
+    const reviewFolder = normalizePath(this.settings.localCleanupFolder || DEFAULT_SETTINGS.localCleanupFolder);
+
+    return {
+      failedUploads,
+      lastStatus: this.lastStatus || this.t("idle"),
+      markdownInScope: this.app.vault.getMarkdownFiles().filter((file) => this.isPathInScope(file.path)).length,
+      reviewFileCount: reviewFiles.length,
+      reviewFolder,
+      reviewFolderBytes: reviewFiles.reduce((total, file) => total + file.stat.size, 0),
+      uploadHistoryCount: Object.keys(uploadHistory).length,
+    };
   }
 
   t(key: TextKey, values?: Record<string, string | number>): string {
@@ -1112,6 +1185,62 @@ export default class R2MediaSyncPlugin extends Plugin {
   }
 }
 
+class DashboardModal extends Modal {
+  constructor(app: App, private plugin: R2MediaSyncPlugin) {
+    super(app);
+  }
+
+  onOpen(): void {
+    void this.render();
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+
+  private async render(): Promise<void> {
+    const { contentEl } = this;
+    contentEl.empty();
+    const data = await this.plugin.getDashboardData();
+
+    contentEl.createEl("h2", { text: this.plugin.t("dashboardTitle") });
+
+    const grid = contentEl.createDiv({ cls: "r2-media-sync-dashboard-grid" });
+    this.addMetric(grid, this.plugin.t("dashboardLastStatus"), data.lastStatus);
+    this.addMetric(grid, this.plugin.t("dashboardMarkdownInScope"), String(data.markdownInScope));
+    this.addMetric(grid, this.plugin.t("dashboardUploadHistory"), String(data.uploadHistoryCount));
+    this.addMetric(grid, this.plugin.t("dashboardFailedUploads"), String(data.failedUploads.length));
+    this.addMetric(grid, this.plugin.t("dashboardReviewFolder"), data.reviewFolder);
+    this.addMetric(grid, this.plugin.t("dashboardReviewFiles"), String(data.reviewFileCount));
+    this.addMetric(grid, this.plugin.t("dashboardReviewSize"), formatBytes(data.reviewFolderBytes));
+
+    const actions = contentEl.createDiv({ cls: "r2-media-sync-modal-actions" });
+    const scanButton = actions.createEl("button", { text: this.plugin.t("dashboardScanButton") });
+    scanButton.addClass("mod-cta");
+    scanButton.addEventListener("click", () => {
+      void (async () => {
+        scanButton.disabled = true;
+        await this.plugin.scanConfiguredScope(true);
+        await this.render();
+      })();
+    });
+
+    const failedButton = actions.createEl("button", { text: this.plugin.t("dashboardFailedButton") });
+    failedButton.addEventListener("click", () => {
+      new FailedUploadsModal(this.app, this.plugin, data.failedUploads).open();
+    });
+
+    const closeButton = actions.createEl("button", { text: this.plugin.t("closeButton") });
+    closeButton.addEventListener("click", () => this.close());
+  }
+
+  private addMetric(parent: HTMLElement, label: string, value: string): void {
+    const item = parent.createDiv({ cls: "r2-media-sync-dashboard-metric" });
+    item.createDiv({ cls: "r2-media-sync-dashboard-label", text: label });
+    item.createDiv({ cls: "r2-media-sync-dashboard-value", text: value });
+  }
+}
+
 class FailedUploadsModal extends Modal {
   constructor(
     app: App,
@@ -1142,6 +1271,19 @@ class FailedUploadsModal extends Modal {
       item.createEl("div", { text: `${this.plugin.t("failedModalImage")}: ${entry.imagePath}` });
       item.createEl("div", { text: `${this.plugin.t("failedModalAttempts")}: ${entry.attempts}` });
       item.createEl("div", { text: `${this.plugin.t("failedModalMessage")}: ${entry.message}` });
+      const retryButton = item.createEl("button", { text: this.plugin.t("retryNoteButton") });
+      retryButton.addEventListener("click", () => {
+        void (async () => {
+          const source = this.app.vault.getAbstractFileByPath(entry.markdownPath);
+          if (!(source instanceof TFile)) {
+            new Notice(`R2 Media Sync: ${this.plugin.t("retryNoteMissing", { path: entry.markdownPath })}`);
+            return;
+          }
+          retryButton.disabled = true;
+          await this.plugin.processFile(source, true);
+          retryButton.disabled = false;
+        })();
+      });
     }
 
     this.addCloseButton(contentEl);

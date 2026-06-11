@@ -61,6 +61,7 @@ Those files can clutter the vault and consume sync storage. R2 Media Sync cleans
 - Retry failed uploads before recording them as failed.
 - Keep a local failed upload log for troubleshooting.
 - View recent failed upload details in a modal.
+- Open a sync dashboard with recent status, scope count, upload history count, failure count, and review folder size.
 - Show the latest sync state in the Obsidian status bar.
 - Choose the plugin interface language: Auto, English, or Traditional Chinese.
 - Manual command to scan the current note.
@@ -239,6 +240,7 @@ Open the command palette and search for `R2 Media Sync`.
 - `Show failed upload summary`
 - `Clear failed upload log`
 - `Clear local review folder`
+- `Open sync dashboard`
 
 ## Example
 
