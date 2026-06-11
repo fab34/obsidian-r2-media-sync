@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.4
+
+- Renamed the settings page heading from the plugin name to "Settings" for community review compliance.
+- Added validation for stored plugin data before merging settings to avoid unsafe assignment warnings.
+
 ## 0.1.3
 
 - Removed the word "Obsidian" from the plugin manifest description to satisfy community review requirements.

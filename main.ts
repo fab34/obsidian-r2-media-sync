@@ -63,6 +63,24 @@ const DEFAULT_SETTINGS: R2MediaSyncSettings = {
   debounceMs: 4000,
 };
 
+const SETTING_KEYS = new Set<keyof R2MediaSyncSettings>([
+  "configSource",
+  "accountId",
+  "accessKeyId",
+  "secretAccessKey",
+  "bucketName",
+  "publicUrl",
+  "pathTemplate",
+  "deleteLocalAfterUpload",
+  "processMarkdownImages",
+  "processWikiImages",
+  "processOnStartup",
+  "scanScopeMode",
+  "includeFolders",
+  "excludeFolders",
+  "debounceMs",
+]);
+
 const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"]);
 const MARKDOWN_IMAGE_RE = /!\[([^\]]*)\]\(([^)]+)\)/g;
 const WIKILINK_IMAGE_RE = /!\[\[([^\]]+\.(?:png|jpe?g|gif|webp|bmp|svg))(?:\|[^\]]*)?\]\]/gi;
@@ -166,6 +184,44 @@ function parseEzImageSettings(raw: string): EzImageSettingsFile {
   };
 }
 
+function parseStoredSettings(value: unknown): Partial<R2MediaSyncSettings> {
+  if (!isRecord(value)) return {};
+  const parsed: Partial<R2MediaSyncSettings> = {};
+
+  for (const [key, raw] of Object.entries(value)) {
+    if (!SETTING_KEYS.has(key as keyof R2MediaSyncSettings)) continue;
+
+    switch (key) {
+      case "configSource":
+        if (raw === "manual" || raw === "ezimage") parsed.configSource = raw;
+        break;
+      case "scanScopeMode":
+        if (raw === "vault" || raw === "folders") parsed.scanScopeMode = raw;
+        break;
+      case "includeFolders":
+      case "excludeFolders":
+        if (Array.isArray(raw) && raw.every((item) => typeof item === "string")) {
+          parsed[key] = raw;
+        }
+        break;
+      case "deleteLocalAfterUpload":
+      case "processMarkdownImages":
+      case "processWikiImages":
+      case "processOnStartup":
+        if (typeof raw === "boolean") parsed[key] = raw;
+        break;
+      case "debounceMs":
+        if (typeof raw === "number" && Number.isFinite(raw)) parsed.debounceMs = raw;
+        break;
+      default:
+        if (typeof raw === "string") parsed[key as keyof Pick<R2MediaSyncSettings, "accountId" | "accessKeyId" | "secretAccessKey" | "bucketName" | "publicUrl" | "pathTemplate">] = raw;
+        break;
+    }
+  }
+
+  return parsed;
+}
+
 function objectKeyFor(fileName: string, template: string): string {
   const now = new Date();
   const ext = fileName.includes(".") ? fileName.split(".").pop()!.toLowerCase() : "bin";
@@ -262,7 +318,8 @@ export default class R2MediaSyncPlugin extends Plugin {
   }
 
   async loadSettings(): Promise<void> {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const stored: unknown = await this.loadData();
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, parseStoredSettings(stored));
   }
 
   async saveSettings(): Promise<void> {
@@ -580,7 +637,7 @@ class R2MediaSyncSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    new Setting(containerEl).setName("R2 Media Sync").setHeading();
+    new Setting(containerEl).setName("Settings").setHeading();
 
     new Setting(containerEl)
       .setName("R2 settings source")
