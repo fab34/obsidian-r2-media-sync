@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added a sync dashboard with status, scan scope, upload history, failure, and review folder metrics.
+- Added a re-scan action to failed upload entries.
+
 ## 0.3.1
 
 - Replaced hard-coded config-folder exclusions with the vault's current config directory.
