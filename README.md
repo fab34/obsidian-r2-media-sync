@@ -1,6 +1,6 @@
 # R2 Media Sync
 
-R2 Media Sync is an Obsidian desktop plugin that automatically uploads local media assets referenced in Markdown notes to Cloudflare R2, rewrites the Markdown links to public R2 URLs, and optionally deletes the local files.
+R2 Media Sync is an Obsidian plugin that automatically uploads local media assets referenced in Markdown notes to Cloudflare R2, rewrites the Markdown links to public R2 URLs, and optionally deletes the local files.
 
 It is designed for workflows where other tools create local image files inside your vault, such as PDF-to-Markdown converters, document importers, AI assistants, or batch import tools.
 
@@ -103,7 +103,7 @@ The plugin only uploads image files that are referenced by Markdown notes and ar
 
 ## Requirements
 
-- Obsidian desktop.
+- Obsidian desktop or mobile.
 - A Cloudflare R2 bucket.
 - A public R2 URL or custom public domain.
 - R2 API credentials with permission to upload objects to the target bucket.

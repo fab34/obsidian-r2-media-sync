@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.3.0
+
+- Added mobile support by removing the desktop-only plugin flag and replacing Node crypto usage with Web Crypto.
+- Added mobile-safe local cleanup fallback for removing uploaded images from the vault.
+- Shortened the desktop status bar display to an icon with compact state text and full details in the tooltip.
 - Added upload retries with configurable attempt count.
 - Added a local failed upload log and commands to show or clear it.
 - Added local hash-based upload history so identical image content can reuse an existing R2 URL.

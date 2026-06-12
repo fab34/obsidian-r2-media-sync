@@ -2,15 +2,16 @@ import {
   App,
   Modal,
   Notice,
+  Platform,
   Plugin,
   PluginSettingTab,
   requestUrl,
   Setting,
+  setIcon,
   TFile,
   TFolder,
   normalizePath,
 } from "obsidian";
-import * as crypto from "crypto";
 
 type ConfigSource = "manual" | "ezimage";
 type ScanScopeMode = "vault" | "folders";
@@ -207,6 +208,13 @@ const TEXT = {
     scanNowDesc: "Scan the configured scope immediately.",
     scanButton: "Scan",
     noRecentActivity: "No recent activity.",
+    webCryptoUnavailable: "Web Crypto is unavailable in this Obsidian runtime.",
+    mobileManualOnly: "Mobile runs in current-note mode.",
+    statusReadyShort: "Ready",
+    statusSyncShort: "Syncing",
+    statusDoneShort: "Done",
+    statusNoLocalShort: "No local",
+    statusIssueShort: "Check",
   },
   "zh-TW": {
     idle: "閒置中",
@@ -308,6 +316,13 @@ const TEXT = {
     scanNowDesc: "立即掃描目前設定的範圍。",
     scanButton: "掃描",
     noRecentActivity: "尚無近期活動。",
+    webCryptoUnavailable: "目前的 Obsidian 執行環境無法使用 Web Crypto。",
+    mobileManualOnly: "手機版使用目前筆記處理模式。",
+    statusReadyShort: "就緒",
+    statusSyncShort: "同步中",
+    statusDoneShort: "完成",
+    statusNoLocalShort: "無本機圖",
+    statusIssueShort: "查看",
   },
 } as const;
 
@@ -326,12 +341,37 @@ function preferredLanguage(setting: UiLanguage): "en" | "zh-TW" {
     : "en";
 }
 
-function hmac(key: crypto.BinaryLike, value: string): Buffer {
-  return crypto.createHmac("sha256", key).update(value, "utf8").digest();
+function bytesToHex(value: ArrayBuffer): string {
+  return Array.from(new Uint8Array(value))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }
 
-function sha256Hex(value: crypto.BinaryLike): string {
-  return crypto.createHash("sha256").update(value).digest("hex");
+function encodeUtf8(value: string): ArrayBuffer {
+  return new TextEncoder().encode(value).buffer as ArrayBuffer;
+}
+
+function requireWebCrypto(): SubtleCrypto {
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) throw new Error("Web Crypto is unavailable in this Obsidian runtime.");
+  return subtle;
+}
+
+async function sha256Hex(value: ArrayBuffer | string): Promise<string> {
+  const data = typeof value === "string" ? encodeUtf8(value) : value;
+  return bytesToHex(await requireWebCrypto().digest("SHA-256", data));
+}
+
+async function hmacSha256(key: ArrayBuffer, value: string): Promise<ArrayBuffer> {
+  const subtle = requireWebCrypto();
+  const cryptoKey = await subtle.importKey(
+    "raw",
+    key,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  return subtle.sign("HMAC", cryptoKey, encodeUtf8(value));
 }
 
 function sleep(ms: number): Promise<void> {
@@ -500,11 +540,11 @@ function objectKeyFor(fileName: string, template: string): string {
   return key.replace(/^\/+/, "");
 }
 
-function signingKey(secret: string, dateStamp: string, region: string, service: string): Buffer {
-  const dateKey = hmac(Buffer.from(`AWS4${secret}`, "utf8"), dateStamp);
-  const regionKey = hmac(dateKey, region);
-  const serviceKey = hmac(regionKey, service);
-  return hmac(serviceKey, "aws4_request");
+async function signingKey(secret: string, dateStamp: string, region: string, service: string): Promise<ArrayBuffer> {
+  const dateKey = await hmacSha256(encodeUtf8(`AWS4${secret}`), dateStamp);
+  const regionKey = await hmacSha256(dateKey, region);
+  const serviceKey = await hmacSha256(regionKey, service);
+  return hmacSha256(serviceKey, "aws4_request");
 }
 
 interface Replacement {
@@ -540,7 +580,10 @@ export default class R2MediaSyncPlugin extends Plugin {
   async onload(): Promise<void> {
     await this.loadSettings();
 
-    this.statusBarEl = this.addStatusBarItem();
+    if (!Platform.isMobile) {
+      this.statusBarEl = this.addStatusBarItem();
+      this.statusBarEl.addClass("r2-media-sync-statusbar");
+    }
     this.updateStatus(this.t("idle"));
 
     this.addSettingTab(new R2MediaSyncSettingTab(this.app, this));
@@ -557,6 +600,11 @@ export default class R2MediaSyncPlugin extends Plugin {
         }
       },
     });
+
+    if (Platform.isMobile) {
+      new Notice(`R2 Media Sync: ${this.t("mobileManualOnly")}`);
+      return;
+    }
 
     this.addCommand({
       id: "scan-configured-scope",
@@ -589,7 +637,7 @@ export default class R2MediaSyncPlugin extends Plugin {
       name: this.t("cmdClearFailed"),
       callback: async () => {
         await this.writeJsonFile(FAILED_UPLOAD_LOG, []);
-        this.updateStatus(this.t("failedUploadLogCleared"));
+        this.updateStatus(this.t("failedUploadLogCleared"), this.t("statusDoneShort"));
         new Notice(`R2 Media Sync: ${this.t("failedUploadLogCleared")}`);
       },
     });
@@ -656,12 +704,46 @@ export default class R2MediaSyncPlugin extends Plugin {
     return formatText(TEXT[language][key] ?? TEXT.en[key], values);
   }
 
-  private updateStatus(message: string): void {
+  private updateStatus(message: string, shortMessage = this.shortStatus(message)): void {
     this.lastStatus = message;
     if (this.statusBarEl) {
-      this.statusBarEl.setText(`R2 Media Sync: ${message}`);
-      this.statusBarEl.title = message;
+      this.statusBarEl.empty();
+      const iconEl = this.statusBarEl.createSpan({ cls: "r2-media-sync-statusbar-icon" });
+      setIcon(iconEl, "cloud-upload");
+      this.statusBarEl.createSpan({
+        cls: "r2-media-sync-statusbar-text",
+        text: shortMessage,
+      });
+      this.statusBarEl.title = `R2 Media Sync: ${message}`;
     }
+  }
+
+  private shortStatus(message: string): string {
+    if (message === this.t("idle")) return this.t("statusReadyShort");
+    if (
+      message.includes(this.t("noLocalImagesFound")) ||
+      message.includes("No local images") ||
+      message.includes("沒有找到本機圖片")
+    ) {
+      return this.t("statusNoLocalShort");
+    }
+    if (
+      message.includes("failed") ||
+      message.includes("Missing") ||
+      message.includes("無法") ||
+      message.includes("失敗")
+    ) {
+      return this.t("statusIssueShort");
+    }
+    if (
+      message.includes("Scanning") ||
+      message.includes("Processing") ||
+      message.includes("Retrying") ||
+      message.includes("正在")
+    ) {
+      return this.t("statusSyncShort");
+    }
+    return this.t("statusDoneShort");
   }
 
   private handleVaultEvent(file: unknown): void {
@@ -891,7 +973,27 @@ export default class R2MediaSyncPlugin extends Plugin {
       return;
     }
 
-    await this.app.fileManager.trashFile(image);
+    await this.trashLocalFile(image);
+  }
+
+  private async trashLocalFile(file: TFile): Promise<void> {
+    const originalPath = file.path;
+    await this.app.fileManager.trashFile(file);
+    if (!this.app.vault.getAbstractFileByPath(originalPath)) return;
+
+    const stillPresent = this.app.vault.getAbstractFileByPath(originalPath);
+    if (stillPresent instanceof TFile) {
+      await this.app.vault.trash(stillPresent, true);
+    }
+    if (!this.app.vault.getAbstractFileByPath(originalPath)) return;
+
+    const stillPresentAfterSystemTrash = this.app.vault.getAbstractFileByPath(originalPath);
+    if (stillPresentAfterSystemTrash instanceof TFile) {
+      await this.app.vault.trash(stillPresentAfterSystemTrash, false);
+    }
+    if (this.app.vault.getAbstractFileByPath(originalPath)) {
+      throw new Error(`Could not remove local image from vault: ${originalPath}`);
+    }
   }
 
   private async nextReviewFolderPath(image: TFile, folder: string): Promise<{ parentPath: string; filePath: string }> {
@@ -938,7 +1040,7 @@ export default class R2MediaSyncPlugin extends Plugin {
     for (const file of files) {
       const current = this.app.vault.getAbstractFileByPath(file.path);
       if (current instanceof TFile) {
-        await this.app.fileManager.trashFile(current);
+        await this.trashLocalFile(current);
         count += 1;
       }
     }
@@ -948,7 +1050,7 @@ export default class R2MediaSyncPlugin extends Plugin {
 
   private async uploadImage(file: TFile, settings: R2MediaSyncSettings, markdownPath: string): Promise<string> {
     const data = await this.app.vault.readBinary(file);
-    const hash = sha256Hex(Buffer.from(data));
+    const hash = await sha256Hex(data);
     if (settings.reuseUploadedByHash) {
       const history = await this.readUploadHistory();
       const existing = history[hash];
@@ -1012,14 +1114,13 @@ export default class R2MediaSyncPlugin extends Plugin {
     key: string,
     settings: R2MediaSyncSettings,
   ): Promise<string> {
-    const payload = Buffer.from(arrayBuffer);
     const contentType = mimeType(fileName);
     const host = `${settings.accountId}.r2.cloudflarestorage.com`;
     const endpoint = `https://${host}/${encodeURIComponent(settings.bucketName)}/${encodeKey(key)}`;
     const now = new Date();
     const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
     const dateStamp = amzDate.slice(0, 8);
-    const payloadHash = sha256Hex(payload);
+    const payloadHash = await sha256Hex(arrayBuffer);
     const canonicalUri = `/${encodeURIComponent(settings.bucketName)}/${encodeKey(key)}`;
     const canonicalHeaders =
       `content-type:${contentType}\n` +
@@ -1040,12 +1141,10 @@ export default class R2MediaSyncPlugin extends Plugin {
       "AWS4-HMAC-SHA256",
       amzDate,
       credentialScope,
-      sha256Hex(Buffer.from(canonicalRequest, "utf8")),
+      await sha256Hex(canonicalRequest),
     ].join("\n");
-    const signature = crypto
-      .createHmac("sha256", signingKey(settings.secretAccessKey, dateStamp, "auto", "s3"))
-      .update(stringToSign, "utf8")
-      .digest("hex");
+    const keyBytes = await signingKey(settings.secretAccessKey, dateStamp, "auto", "s3");
+    const signature = bytesToHex(await hmacSha256(keyBytes, stringToSign));
     const authorization =
       "AWS4-HMAC-SHA256 " +
       `Credential=${settings.accessKeyId}/${credentialScope}, ` +
@@ -1324,6 +1423,12 @@ class R2MediaSyncSettingTab extends PluginSettingTab {
           this.plugin.settings.processWikiImages = value;
           await this.plugin.saveSettings();
         }));
+
+    if (Platform.isMobile) {
+      const status = containerEl.createDiv({ cls: "r2-media-sync-status" });
+      status.setText(this.plugin.t("mobileManualOnly"));
+      return;
+    }
 
     new Setting(containerEl)
       .setName(this.plugin.t("scanStartupName"))

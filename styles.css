@@ -5,6 +5,37 @@
   white-space: pre-wrap;
 }
 
+.r2-media-sync-statusbar {
+  align-items: center;
+  display: inline-flex;
+  gap: 4px;
+  max-width: 88px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.r2-media-sync-statusbar-icon {
+  align-items: center;
+  color: var(--text-muted);
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.r2-media-sync-statusbar-icon svg {
+  height: 14px;
+  width: 14px;
+}
+
+.r2-media-sync-statusbar-text {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .r2-media-sync-failed-list {
   display: flex;
   flex-direction: column;
