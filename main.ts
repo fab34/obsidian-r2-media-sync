@@ -155,6 +155,8 @@ const TEXT = {
     dashboardReviewSize: "Review size",
     dashboardScanButton: "Scan now",
     dashboardFailedButton: "View failed uploads",
+    dashboardClearFailedButton: "Clear failed log",
+    dashboardClearReviewButton: "Clear review folder",
     retryNoteButton: "Re-scan note",
     retryNoteMissing: "Source note not found: {path}",
     failedModalTitle: "Failed uploads",
@@ -276,6 +278,8 @@ const TEXT = {
     dashboardReviewSize: "檢查檔案容量",
     dashboardScanButton: "立即掃描",
     dashboardFailedButton: "查看失敗上傳",
+    dashboardClearFailedButton: "清除失敗紀錄",
+    dashboardClearReviewButton: "清理檢查資料夾",
     retryNoteButton: "重新掃描筆記",
     retryNoteMissing: "找不到來源筆記：{path}",
     failedModalTitle: "失敗上傳",
@@ -719,9 +723,7 @@ export default class R2MediaSyncPlugin extends Plugin {
       id: "clear-failed-uploads",
       name: this.t("cmdClearFailed"),
       callback: async () => {
-        await this.writeJsonFile(FAILED_UPLOAD_LOG, []);
-        this.updateStatus(this.t("failedUploadLogCleared"), this.t("statusDoneShort"));
-        new Notice(`R2 Media Sync: ${this.t("failedUploadLogCleared")}`);
+        await this.clearFailedUploads();
       },
     });
 
@@ -797,6 +799,23 @@ export default class R2MediaSyncPlugin extends Plugin {
       reviewFolderBytes: reviewFiles.reduce((total, file) => total + file.stat.size, 0),
       uploadHistoryCount: Object.keys(uploadHistory).length,
     };
+  }
+
+  async clearFailedUploads(): Promise<void> {
+    await this.writeJsonFile(FAILED_UPLOAD_LOG, []);
+    this.updateStatus(this.t("failedUploadLogCleared"), this.t("statusDoneShort"));
+    new Notice(`R2 Media Sync: ${this.t("failedUploadLogCleared")}`);
+  }
+
+  async clearReviewFolderWithNotice(): Promise<void> {
+    const files = this.getReviewFolderFiles();
+    if (!files.length) {
+      new Notice(`R2 Media Sync: ${this.t("clearReviewEmpty")}`);
+      return;
+    }
+
+    const count = await this.clearReviewFolder(files);
+    new Notice(`R2 Media Sync: ${this.t("clearReviewDone", { count })}`);
   }
 
   t(key: TextKey, values?: Record<string, string | number>): string {
@@ -1349,6 +1368,39 @@ class DashboardModal extends Modal {
     const failedButton = actions.createEl("button", { text: this.plugin.t("dashboardFailedButton") });
     failedButton.addEventListener("click", () => {
       new FailedUploadsModal(this.app, this.plugin, data.failedUploads).open();
+    });
+
+    const clearFailedButton = actions.createEl("button", { text: this.plugin.t("dashboardClearFailedButton") });
+    clearFailedButton.disabled = data.failedUploads.length === 0;
+    clearFailedButton.addEventListener("click", () => {
+      void (async () => {
+        clearFailedButton.disabled = true;
+        try {
+          await this.plugin.clearFailedUploads();
+          await this.render();
+        } finally {
+          clearFailedButton.disabled = false;
+        }
+      })();
+    });
+
+    const clearReviewButton = actions.createEl("button", { text: this.plugin.t("dashboardClearReviewButton") });
+    clearReviewButton.disabled = data.reviewFileCount === 0;
+    clearReviewButton.addEventListener("click", () => {
+      new ConfirmModal(
+        this.app,
+        this.plugin,
+        this.plugin.t("clearReviewTitle"),
+        this.plugin.t("clearReviewConfirm", {
+          count: data.reviewFileCount,
+          folder: data.reviewFolder,
+        }),
+        this.plugin.t("clearReviewButton"),
+        async () => {
+          await this.plugin.clearReviewFolderWithNotice();
+          await this.render();
+        },
+      ).open();
     });
 
     const closeButton = actions.createEl("button", { text: this.plugin.t("closeButton") });

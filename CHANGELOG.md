@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Added a sync dashboard with status, scan scope, upload history, failure, and review folder metrics.
+- Added a sync dashboard with status, scan scope, upload history, failure, review folder metrics, and maintenance actions.
 - Added a re-scan action to failed upload entries.
 
 ## 0.3.1
