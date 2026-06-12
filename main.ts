@@ -7,6 +7,7 @@ import {
   PluginSettingTab,
   requestUrl,
   Setting,
+  SettingDefinitionItem,
   setIcon,
   TFile,
   TFolder,
@@ -17,6 +18,10 @@ type ConfigSource = "manual" | "ezimage";
 type ScanScopeMode = "vault" | "folders";
 type UiLanguage = "auto" | "en" | "zh-TW";
 type LocalCleanupMode = "trash" | "folder";
+type TextSettingKey = keyof Pick<
+  R2MediaSyncSettings,
+  "accountId" | "accessKeyId" | "secretAccessKey" | "bucketName" | "publicUrl" | "pathTemplate" | "localCleanupFolder"
+>;
 
 interface R2MediaSyncSettings {
   uiLanguage: UiLanguage;
@@ -54,6 +59,8 @@ interface EzImageSettingsFile {
   pathTemplate?: string;
 }
 
+const DEFAULT_EXCLUDED_FOLDERS = [".git", ".trash", "Templates"];
+
 const DEFAULT_SETTINGS: R2MediaSyncSettings = {
   uiLanguage: "auto",
   configSource: "ezimage",
@@ -72,7 +79,7 @@ const DEFAULT_SETTINGS: R2MediaSyncSettings = {
   processOnStartup: false,
   scanScopeMode: "vault",
   includeFolders: ["AI 工作區"],
-  excludeFolders: [".obsidian", ".git", ".trash", "Templates"],
+  excludeFolders: [...DEFAULT_EXCLUDED_FOLDERS],
   debounceMs: 4000,
   maxUploadAttempts: 3,
 };
@@ -199,7 +206,7 @@ const TEXT = {
     includedFoldersName: "Included folders",
     includedFoldersDesc: "Comma-separated vault-relative folders.",
     excludedFoldersName: "Excluded folders",
-    excludedFoldersDesc: "Comma-separated vault-relative folders. Defaults protect .obsidian, .git, trash, and Templates.",
+    excludedFoldersDesc: "Comma-separated vault-relative folders. The vault config folder is always protected automatically.",
     debounceName: "Debounce delay",
     debounceDesc: "Milliseconds to wait after file changes before processing.",
     retryAttemptsName: "Upload retry attempts",
@@ -307,7 +314,7 @@ const TEXT = {
     includedFoldersName: "指定資料夾",
     includedFoldersDesc: "以逗號分隔的 vault 相對資料夾路徑。",
     excludedFoldersName: "排除資料夾",
-    excludedFoldersDesc: "以逗號分隔的 vault 相對資料夾路徑。預設會保護 .obsidian、.git、trash 與 Templates。",
+    excludedFoldersDesc: "以逗號分隔的 vault 相對資料夾路徑。Vault 設定資料夾會自動受到保護。",
     debounceName: "延遲處理時間",
     debounceDesc: "檔案變更後等待多少毫秒再開始處理。",
     retryAttemptsName: "上傳重試次數",
@@ -330,7 +337,7 @@ type TextKey = keyof typeof TEXT.en;
 
 function formatText(template: string, values?: Record<string, string | number>): string {
   if (!values) return template;
-  return template.replace(/\{(\w+)\}/g, (match, key) => String(values[key] ?? match));
+  return template.replace(/\{(\w+)\}/g, (match: string, key: string) => String(values[key] ?? match));
 }
 
 function preferredLanguage(setting: UiLanguage): "en" | "zh-TW" {
@@ -352,7 +359,7 @@ function encodeUtf8(value: string): ArrayBuffer {
 }
 
 function requireWebCrypto(): SubtleCrypto {
-  const subtle = globalThis.crypto?.subtle;
+  const subtle = window.crypto?.subtle;
   if (!subtle) throw new Error("Web Crypto is unavailable in this Obsidian runtime.");
   return subtle;
 }
@@ -490,17 +497,29 @@ function parseStoredSettings(value: unknown): Partial<R2MediaSyncSettings> {
         if (raw === "trash" || raw === "folder") parsed.localCleanupMode = raw;
         break;
       case "includeFolders":
+        if (Array.isArray(raw) && raw.every((item) => typeof item === "string")) {
+          parsed.includeFolders = raw;
+        }
+        break;
       case "excludeFolders":
         if (Array.isArray(raw) && raw.every((item) => typeof item === "string")) {
-          parsed[key] = raw;
+          parsed.excludeFolders = raw;
         }
         break;
       case "deleteLocalAfterUpload":
+        if (typeof raw === "boolean") parsed.deleteLocalAfterUpload = raw;
+        break;
       case "reuseUploadedByHash":
+        if (typeof raw === "boolean") parsed.reuseUploadedByHash = raw;
+        break;
       case "processMarkdownImages":
+        if (typeof raw === "boolean") parsed.processMarkdownImages = raw;
+        break;
       case "processWikiImages":
+        if (typeof raw === "boolean") parsed.processWikiImages = raw;
+        break;
       case "processOnStartup":
-        if (typeof raw === "boolean") parsed[key] = raw;
+        if (typeof raw === "boolean") parsed.processOnStartup = raw;
         break;
       case "debounceMs":
         if (typeof raw === "number" && Number.isFinite(raw)) parsed.debounceMs = raw;
@@ -508,8 +527,16 @@ function parseStoredSettings(value: unknown): Partial<R2MediaSyncSettings> {
       case "maxUploadAttempts":
         if (typeof raw === "number" && Number.isFinite(raw)) parsed.maxUploadAttempts = Math.max(1, Math.floor(raw));
         break;
+      case "accountId":
+      case "accessKeyId":
+      case "secretAccessKey":
+      case "bucketName":
+      case "publicUrl":
+      case "pathTemplate":
+      case "localCleanupFolder":
+        if (typeof raw === "string") parsed[key] = raw;
+        break;
       default:
-        if (typeof raw === "string") parsed[key as keyof Pick<R2MediaSyncSettings, "accountId" | "accessKeyId" | "secretAccessKey" | "bucketName" | "publicUrl" | "pathTemplate" | "localCleanupFolder">] = raw;
         break;
     }
   }
@@ -795,7 +822,8 @@ export default class R2MediaSyncPlugin extends Plugin {
 
   private isPathInScope(path: string): boolean {
     const normalized = normalizePath(path);
-    for (const folder of this.settings.excludeFolders) {
+    const excludedFolders = [this.app.vault.configDir, ...this.settings.excludeFolders];
+    for (const folder of excludedFolders) {
       const clean = normalizePath(folder);
       if (clean && (normalized === clean || normalized.startsWith(`${clean}/`))) return false;
     }
@@ -979,21 +1007,11 @@ export default class R2MediaSyncPlugin extends Plugin {
   private async trashLocalFile(file: TFile): Promise<void> {
     const originalPath = file.path;
     await this.app.fileManager.trashFile(file);
-    if (!this.app.vault.getAbstractFileByPath(originalPath)) return;
-
-    const stillPresent = this.app.vault.getAbstractFileByPath(originalPath);
-    if (stillPresent instanceof TFile) {
-      await this.app.vault.trash(stillPresent, true);
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      if (!this.app.vault.getAbstractFileByPath(originalPath)) return;
+      await sleep(100);
     }
-    if (!this.app.vault.getAbstractFileByPath(originalPath)) return;
-
-    const stillPresentAfterSystemTrash = this.app.vault.getAbstractFileByPath(originalPath);
-    if (stillPresentAfterSystemTrash instanceof TFile) {
-      await this.app.vault.trash(stillPresentAfterSystemTrash, false);
-    }
-    if (this.app.vault.getAbstractFileByPath(originalPath)) {
-      throw new Error(`Could not remove local image from vault: ${originalPath}`);
-    }
+    throw new Error(`Could not remove local image from vault: ${originalPath}`);
   }
 
   private async nextReviewFolderPath(image: TFile, folder: string): Promise<{ parentPath: string; filePath: string }> {
@@ -1302,8 +1320,19 @@ class R2MediaSyncSettingTab extends PluginSettingTab {
     this.plugin = plugin;
   }
 
-  display(): void {
-    const { containerEl } = this;
+  getSettingDefinitions(): SettingDefinitionItem[] {
+    return [{
+      name: "R2 Media Sync",
+      searchable: false,
+      render: (setting: Setting) => {
+        setting.settingEl.empty();
+        const containerEl = setting.settingEl.createDiv({ cls: "r2-media-sync-settings" });
+        this.renderSettings(containerEl);
+      },
+    }];
+  }
+
+  private renderSettings(containerEl: HTMLElement): void {
     containerEl.empty();
 
     new Setting(containerEl)
@@ -1317,7 +1346,7 @@ class R2MediaSyncSettingTab extends PluginSettingTab {
         .onChange(async (value: UiLanguage) => {
           this.plugin.settings.uiLanguage = value;
           await this.plugin.saveSettings();
-          this.display();
+          this.update();
         }));
 
     new Setting(containerEl)
@@ -1330,7 +1359,7 @@ class R2MediaSyncSettingTab extends PluginSettingTab {
         .onChange(async (value: ConfigSource) => {
           this.plugin.settings.configSource = value;
           await this.plugin.saveSettings();
-          this.display();
+          this.update();
         }));
 
     new Setting(containerEl)
@@ -1340,21 +1369,22 @@ class R2MediaSyncSettingTab extends PluginSettingTab {
         .setButtonText(this.plugin.t("importButton"))
         .onClick(async () => {
           await this.plugin.importEzImageSettings(true);
-          this.display();
+          this.update();
         }));
 
     if (this.plugin.settings.configSource === "manual") {
-      this.addTextSetting(this.plugin.t("accountIdName"), this.plugin.t("accountIdDesc"), "accountId");
-      this.addTextSetting(this.plugin.t("accessKeyIdName"), this.plugin.t("accessKeyIdDesc"), "accessKeyId");
-      this.addTextSetting(this.plugin.t("secretAccessKeyName"), this.plugin.t("secretAccessKeyDesc"), "secretAccessKey", true);
-      this.addTextSetting(this.plugin.t("bucketNameName"), this.plugin.t("bucketNameDesc"), "bucketName");
-      this.addTextSetting(this.plugin.t("publicUrlName"), this.plugin.t("publicUrlDesc"), "publicUrl");
+      this.addTextSetting(this.plugin.t("accountIdName"), this.plugin.t("accountIdDesc"), "accountId", containerEl);
+      this.addTextSetting(this.plugin.t("accessKeyIdName"), this.plugin.t("accessKeyIdDesc"), "accessKeyId", containerEl);
+      this.addTextSetting(this.plugin.t("secretAccessKeyName"), this.plugin.t("secretAccessKeyDesc"), "secretAccessKey", containerEl, true);
+      this.addTextSetting(this.plugin.t("bucketNameName"), this.plugin.t("bucketNameDesc"), "bucketName", containerEl);
+      this.addTextSetting(this.plugin.t("publicUrlName"), this.plugin.t("publicUrlDesc"), "publicUrl", containerEl);
     }
 
     this.addTextSetting(
       this.plugin.t("pathTemplateName"),
       this.plugin.t("pathTemplateDesc"),
       "pathTemplate",
+      containerEl,
     );
 
     new Setting(containerEl)
@@ -1368,7 +1398,7 @@ class R2MediaSyncSettingTab extends PluginSettingTab {
           if (value) {
             new Notice(`R2 Media Sync: ${this.plugin.t("deleteEnabledNotice")}`);
           }
-          this.display();
+          this.update();
         }));
 
     if (this.plugin.settings.deleteLocalAfterUpload) {
@@ -1382,7 +1412,7 @@ class R2MediaSyncSettingTab extends PluginSettingTab {
           .onChange(async (value: LocalCleanupMode) => {
             this.plugin.settings.localCleanupMode = value;
             await this.plugin.saveSettings();
-            this.display();
+            this.update();
           }));
 
       if (this.plugin.settings.localCleanupMode === "folder") {
@@ -1390,6 +1420,7 @@ class R2MediaSyncSettingTab extends PluginSettingTab {
           this.plugin.t("cleanupFolderName"),
           this.plugin.t("cleanupFolderDesc"),
           "localCleanupFolder",
+          containerEl,
         );
       }
     }
@@ -1450,7 +1481,7 @@ class R2MediaSyncSettingTab extends PluginSettingTab {
         .onChange(async (value: ScanScopeMode) => {
           this.plugin.settings.scanScopeMode = value;
           await this.plugin.saveSettings();
-          this.display();
+          this.update();
         }));
 
     if (this.plugin.settings.scanScopeMode === "folders") {
@@ -1510,7 +1541,7 @@ class R2MediaSyncSettingTab extends PluginSettingTab {
         .onClick(async () => {
           const result = await this.plugin.scanConfiguredScope(true);
           new Notice(`R2 Media Sync: ${this.plugin.t("scannedNotice", { scanned: result.scanned, uploaded: result.uploaded })}`);
-          this.display();
+          this.update();
         }));
 
     const status = containerEl.createDiv({ cls: "r2-media-sync-status" });
@@ -1520,10 +1551,11 @@ class R2MediaSyncSettingTab extends PluginSettingTab {
   private addTextSetting(
     name: string,
     desc: string,
-    key: keyof Pick<R2MediaSyncSettings, "accountId" | "accessKeyId" | "secretAccessKey" | "bucketName" | "publicUrl" | "pathTemplate" | "localCleanupFolder">,
+    key: TextSettingKey,
+    containerEl: HTMLElement,
     password = false,
   ): void {
-    new Setting(this.containerEl)
+    new Setting(containerEl)
       .setName(name)
       .setDesc(desc)
       .addText((text) => {

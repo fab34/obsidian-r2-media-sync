@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.3.1
+
+- Replaced hard-coded config-folder exclusions with the vault's current config directory.
+- Switched settings rendering to Obsidian's `getSettingDefinitions()` API.
+- Raised the minimum app version to 1.13.0 for the new settings API.
+- Removed direct `Vault.trash()` fallback in favor of `FileManager.trashFile()`.
+- Replaced `globalThis.crypto` access with `window.crypto` for popup-window compatibility.
+
 ## 0.3.0
 
 - Added mobile support by removing the desktop-only plugin flag and replacing Node crypto usage with Web Crypto.
